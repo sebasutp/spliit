@@ -23,12 +23,13 @@ model Group {
 }
 
 model Participant {
-  id              String           @id
-  name            String
-  group           Group            @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  groupId         String
-  expensesPaidBy  Expense[]
-  expensesPaidFor ExpensePaidFor[]
+  id               String           @id
+  name             String
+  group            Group            @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  groupId          String
+  expensesPaidBy   Expense[]
+  expensesPaidFor  ExpensePaidFor[]
+  allExpensesAdded Boolean          @default(false)
 }
 
 model Category {

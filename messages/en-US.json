@@ -44,6 +44,9 @@
     "receivedBy": "Received by <strong>{paidBy}</strong> for <paidFor></paidFor>",
     "yourBalance": "Your balance:"
   },
+  "Participants": {
+    "title": "Participants"
+  },
   "Groups": {
     "myGroups": "My groups",
     "create": "Create",

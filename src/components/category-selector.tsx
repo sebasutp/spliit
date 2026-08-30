@@ -22,7 +22,7 @@ import { useTranslations } from 'next-intl'
 import { forwardRef, useEffect, useState } from 'react'
 
 type Props = {
-  categories: Category[]
+  categories?: Category[]
   onValueChange: (categoryId: Category['id']) => void
   /** Category ID to be selected by default. Overwriting this value will update current selection, too. */
   defaultValue: Category['id']
@@ -30,7 +30,7 @@ type Props = {
 }
 
 export function CategorySelector({
-  categories,
+  categories = [],
   onValueChange,
   defaultValue,
   isLoading,
@@ -43,10 +43,13 @@ export function CategorySelector({
   useEffect(() => {
     setValue(defaultValue)
     onValueChange(defaultValue)
-  }, [defaultValue])
+  }, [defaultValue, onValueChange])
 
+  const safeCategories = categories ?? []
   const selectedCategory =
-    categories.find((category) => category.id === value) ?? categories[0]
+    safeCategories.find((category) => category?.id === value) ??
+    safeCategories[0] ??
+    null
 
   if (isDesktop) {
     return (
@@ -60,7 +63,7 @@ export function CategorySelector({
         </PopoverTrigger>
         <PopoverContent className="p-0" align="start">
           <CategoryCommand
-            categories={categories}
+            categories={safeCategories}
             onValueChange={(id) => {
               setValue(id)
               onValueChange(id)
@@ -83,7 +86,7 @@ export function CategorySelector({
       </DrawerTrigger>
       <DrawerContent className="p-0">
         <CategoryCommand
-          categories={categories}
+          categories={safeCategories}
           onValueChange={(id) => {
             setValue(id)
             onValueChange(id)
@@ -96,14 +99,17 @@ export function CategorySelector({
 }
 
 function CategoryCommand({
-  categories,
+  categories = [],
   onValueChange,
 }: {
   categories: Category[]
   onValueChange: (categoryId: Category['id']) => void
 }) {
   const t = useTranslations('Categories')
-  const categoriesByGroup = categories.reduce<Record<string, Category[]>>(
+  const validCategories = (categories ?? []).filter((c): c is Category =>
+    Boolean(c && c.grouping && c.name),
+  )
+  const categoriesByGroup = validCategories.reduce<Record<string, Category[]>>(
     (acc, category) => ({
       ...acc,
       [category.grouping]: [...(acc[category.grouping] ?? []), category],
@@ -142,7 +148,7 @@ function CategoryCommand({
 }
 
 type CategoryButtonProps = {
-  category: Category
+  category?: Category | null
   open: boolean
   isLoading: boolean
 }
@@ -173,8 +179,16 @@ const CategoryButton = forwardRef<HTMLButtonElement, CategoryButtonProps>(
 )
 CategoryButton.displayName = 'CategoryButton'
 
-function CategoryLabel({ category }: { category: Category }) {
+function CategoryLabel({ category }: { category?: Category | null }) {
   const t = useTranslations('Categories')
+  if (!category || !category.grouping || !category.name) {
+    return (
+      <div className="flex items-center gap-3">
+        <CategoryIcon category={null} className="w-4 h-4" />
+        <span>{t('search')}</span>
+      </div>
+    )
+  }
   return (
     <div className="flex items-center gap-3">
       <CategoryIcon category={category} className="w-4 h-4" />

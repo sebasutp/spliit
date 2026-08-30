@@ -105,7 +105,10 @@ function CategoryBars({
               onClick={() => setSelected(category)}
               className="group -mx-2 flex w-full cursor-pointer flex-col gap-1.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               aria-label={tByCategory('showExpenses', {
-                category: t(`${category.grouping}.${category.name}`),
+                category:
+                  category.grouping && category.name
+                    ? t(`${category.grouping}.${category.name}`)
+                    : category.name || 'Category',
               })}
             >
               <div className="flex items-center justify-between gap-2 text-sm">
@@ -119,7 +122,9 @@ function CategoryBars({
                     className="h-4 w-4 shrink-0 text-muted-foreground"
                   />
                   <span className="truncate">
-                    {t(`${category.grouping}.${category.name}`)}
+                    {category.grouping && category.name
+                      ? t(`${category.grouping}.${category.name}`)
+                      : category.name || ''}
                   </span>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
@@ -155,7 +160,9 @@ function CategoryBars({
                 }}
                 className="h-4 w-4 shrink-0 text-muted-foreground"
               />
-              {t(`${selected.grouping}.${selected.name}`)}
+              {selected.grouping && selected.name
+                ? t(`${selected.grouping}.${selected.name}`)
+                : selected.name || ''}
             </>
           )
         }

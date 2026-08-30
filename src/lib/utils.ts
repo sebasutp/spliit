@@ -53,7 +53,7 @@ export function formatDateOnly(
 }
 
 export function formatCategoryForAIPrompt(category: Category) {
-  return `"${category.grouping}/${category.name}" (ID: ${category.id})`
+  return `"${category?.grouping ?? 'Uncategorized'}/${category?.name ?? 'General'}" (ID: ${category?.id ?? 0})`
 }
 
 /**

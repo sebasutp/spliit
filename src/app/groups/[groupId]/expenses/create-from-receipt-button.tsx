@@ -194,9 +194,11 @@ function ReceiptDialogContent() {
                       category={receiptInfoCategory}
                       className="inline w-4 h-4 mr-2"
                     />
-                    <span className="mr-1">{receiptInfoCategory.grouping}</span>
+                    <span className="mr-1">
+                      {receiptInfoCategory?.grouping}
+                    </span>
                     <ChevronRight className="inline w-3 h-3 mr-1" />
-                    <span>{receiptInfoCategory.name}</span>
+                    <span>{receiptInfoCategory?.name}</span>
                   </div>
                 ) : (
                   <Unknown />

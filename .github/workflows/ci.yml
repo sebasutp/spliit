@@ -33,8 +33,10 @@ jobs:
           npm ci --ignore-scripts
           npm rebuild better-sqlite3
 
-      - name: Generate Prisma client
-        run: npx prisma generate
+      - name: Generate Prisma client & initialize database
+        run: |
+          npx prisma generate
+          npx prisma db push
 
       - name: Check TypeScript types
         run: npm run check-types

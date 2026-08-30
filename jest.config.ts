@@ -10,6 +10,7 @@ const customJestConfig: Config = {
   testEnvironment: 'jsdom',
   testPathIgnorePatterns: ['<rootDir>/node_modules/', '<rootDir>/e2e/'],
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
+  maxWorkers: 1,
 }
 
 export default async () => {

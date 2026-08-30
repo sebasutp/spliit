@@ -4,9 +4,24 @@ const withNextIntl = createNextIntlPlugin()
 
 /**
  * Undefined entries are not supported. Push optional patterns to this array only if defined.
- * @type {import('next/dist/shared/lib/image-config').RemotePattern}
+ * @type {import('next/dist/shared/lib/image-config').RemotePattern[]}
  */
-const remotePatterns = []
+const remotePatterns = [
+  // Google OAuth profile avatars (e.g. lh3.googleusercontent.com)
+  {
+    protocol: 'https',
+    hostname: '*.googleusercontent.com',
+  },
+  // GitHub OAuth profile avatars (e.g. avatars.githubusercontent.com)
+  {
+    protocol: 'https',
+    hostname: '*.githubusercontent.com',
+  },
+  {
+    protocol: 'https',
+    hostname: 'avatars.githubusercontent.com',
+  },
+]
 
 // S3 Storage
 if (process.env.S3_UPLOAD_ENDPOINT) {

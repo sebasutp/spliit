@@ -1,8 +1,27 @@
 #!/usr/bin/env node
 
-import Database from 'better-sqlite3'
 import fs from 'node:fs'
+import { createRequire } from 'node:module'
 import path from 'node:path'
+
+let Database
+try {
+  const req = createRequire(import.meta.url)
+  try {
+    const adapterReq = createRequire(
+      path.resolve(
+        process.cwd(),
+        'node_modules/@prisma/adapter-better-sqlite3/package.json',
+      ),
+    )
+    Database = adapterReq('better-sqlite3')
+  } catch {
+    Database = req('better-sqlite3')
+  }
+} catch (e) {
+  console.error('Failed to load better-sqlite3:', e)
+  process.exit(1)
+}
 
 const email = process.argv[2]?.trim().toLowerCase()
 
@@ -30,8 +49,9 @@ const resolvedDbPath = path.isAbsolute(dbPath)
   ? dbPath
   : path.resolve(process.cwd(), dbPath)
 
+let db
 try {
-  const db = new Database(resolvedDbPath)
+  db = new Database(resolvedDbPath)
 
   const user = db
     .prepare('SELECT id, name, email, tier FROM User WHERE LOWER(email) = ?')
@@ -47,23 +67,22 @@ try {
     console.log(
       `✅ Successfully pre-authorized user (${email}) as Administrator! When they log in via OAuth, they will immediately have Admin permissions.`,
     )
-    process.exit(0)
-  }
-
-  if (user.tier === 'admin') {
+  } else if (user.tier === 'admin') {
     console.log(
       `User ${user.name || ''} (${user.email}) is already an Administrator.`,
     )
-    process.exit(0)
+  } else {
+    db.prepare('UPDATE User SET tier = ? WHERE id = ?').run('admin', user.id)
+
+    console.log(
+      `✅ Successfully promoted user ${user.name || ''} (${user.email}) to Administrator tier!`,
+    )
   }
-
-  db.prepare('UPDATE User SET tier = ? WHERE id = ?').run('admin', user.id)
-
-  console.log(
-    `✅ Successfully promoted user ${user.name || ''} (${user.email}) to Administrator tier!`,
-  )
-  process.exit(0)
 } catch (err) {
   console.error('Error executing make-admin script:', err)
   process.exit(1)
+} finally {
+  if (db) {
+    db.close()
+  }
 }

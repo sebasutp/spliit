@@ -2,12 +2,23 @@ import { env } from './env'
 
 /**
  * Hosts that uploaded receipt/document images can legitimately live on, derived
- * from the configured S3 storage. Mirrors the image `remotePatterns` logic in
- * next.config.mjs so that the set of trusted hosts stays consistent.
+ * from the configured S3 storage. A dedicated public read host
+ * (`S3_PUBLIC_URL`) takes precedence over the S3 API endpoint, matching where
+ * uploaded documents are actually read from.
  */
 function getAllowedUploadHosts(): string[] {
   const hosts: string[] = []
-  if (env.S3_UPLOAD_ENDPOINT) {
+  const publicUrl = env.S3_PUBLIC_URL
+  if (publicUrl) {
+    // Providers that serve objects from a dedicated public host (e.g.
+    // Cloudflare R2 custom domains / r2.dev) have their stored URLs point at
+    // this host rather than the S3 API endpoint, so it is the one to trust.
+    try {
+      hosts.push(new URL(publicUrl).hostname)
+    } catch {
+      // ignore an unparseable URL; it contributes no allowed host
+    }
+  } else if (env.S3_UPLOAD_ENDPOINT) {
     // custom endpoint for providers other than AWS
     try {
       hosts.push(new URL(env.S3_UPLOAD_ENDPOINT).hostname)

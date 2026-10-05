@@ -26,7 +26,12 @@ import {
 import { ToastAction } from '@/components/ui/toast'
 import { useToast } from '@/components/ui/use-toast'
 import { useAnalytics } from '@/lib/analytics/context'
+import { MAX_INPUT_FILE_SIZE, compressImage } from '@/lib/compress-image'
 import { useMediaQuery } from '@/lib/hooks'
+import {
+  getPublicUploadUrl,
+  isPublicUploadUrlConfigured,
+} from '@/lib/public-upload-url'
 import {
   formatCurrency,
   formatDate,
@@ -42,9 +47,12 @@ import { useRouter } from 'next/navigation'
 import { PropsWithChildren, ReactNode, useState } from 'react'
 import { useCurrentGroup } from '../current-group-context'
 
-const MAX_FILE_SIZE = 5 * 1024 ** 2
-
-export function CreateFromReceiptButton() {
+export function CreateFromReceiptButton({
+  s3PublicUrl,
+}: {
+  /** Public base URL for uploaded documents, resolved on the server. */
+  s3PublicUrl?: string | null
+}) {
   const t = useTranslations('CreateFromReceipt')
   const isDesktop = useMediaQuery('(min-width: 640px)')
 
@@ -73,12 +81,16 @@ export function CreateFromReceiptButton() {
       }
       description={<>{t('Dialog.description')}</>}
     >
-      <ReceiptDialogContent />
+      <ReceiptDialogContent s3PublicUrl={s3PublicUrl} />
     </DialogOrDrawer>
   )
 }
 
-function ReceiptDialogContent() {
+function ReceiptDialogContent({
+  s3PublicUrl,
+}: {
+  s3PublicUrl?: string | null
+}) {
   const { groupId, group } = useCurrentGroup()
   const sendEvent = useAnalytics()
   const { data: categoriesData } = trpc.categories.list.useQuery()
@@ -96,11 +108,11 @@ function ReceiptDialogContent() {
   >(null)
 
   const handleFileChange = async (file: File) => {
-    if (file.size > MAX_FILE_SIZE) {
+    if (file.size > MAX_INPUT_FILE_SIZE) {
       toast({
         title: t('TooBigToast.title'),
         description: t('TooBigToast.description', {
-          maxSize: formatFileSize(MAX_FILE_SIZE, locale),
+          maxSize: formatFileSize(MAX_INPUT_FILE_SIZE, locale),
           size: formatFileSize(file.size, locale),
         }),
         variant: 'destructive',
@@ -115,12 +127,15 @@ function ReceiptDialogContent() {
       )
       try {
         setPending(true)
+        console.log('Compressing image…')
+        const compressed = await compressImage(file)
         console.log('Uploading image…')
-        let { url } = await uploadToS3(file)
+        let { url: uploadUrl, key } = await uploadToS3(compressed)
+        const url = getPublicUploadUrl(s3PublicUrl, key, uploadUrl)
         console.log('Extracting information from receipt…')
         const { amount, categoryId, date, title } =
           await extractExpenseInformationFromImage(url)
-        const { width, height } = await getImageData(file)
+        const { width, height } = await getImageData(compressed)
         setReceiptInfo({ amount, categoryId, date, title, url, width, height })
       } catch (err) {
         console.error(err)
@@ -172,6 +187,7 @@ function ReceiptDialogContent() {
                   height={receiptInfo.height}
                   className="w-full h-full m-0 object-contain drop-shadow-lg"
                   alt="Scanned receipt"
+                  unoptimized={isPublicUploadUrlConfigured(s3PublicUrl)}
                 />
               </div>
             ) : (

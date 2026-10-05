@@ -17,6 +17,11 @@ import {
 } from '@/components/ui/dialog'
 import { ToastAction } from '@/components/ui/toast'
 import { useToast } from '@/components/ui/use-toast'
+import { MAX_INPUT_FILE_SIZE, compressImage } from '@/lib/compress-image'
+import {
+  getPublicUploadUrl,
+  isPublicUploadUrlConfigured,
+} from '@/lib/public-upload-url'
 import { randomId } from '@/lib/random'
 import { ExpenseFormValues } from '@/lib/schemas'
 import { formatFileSize } from '@/lib/utils'
@@ -31,14 +36,15 @@ type Props = {
   updateDocuments: (documents: ExpenseFormValues['documents']) => void
   /** Called once per document successfully uploaded. */
   onDocumentAttached?: () => void
+  /** Public base URL for uploaded documents, resolved on the server. */
+  s3PublicUrl?: string | null
 }
-
-const MAX_FILE_SIZE = 5 * 1024 ** 2
 
 export function ExpenseDocumentsInput({
   documents,
   updateDocuments,
   onDocumentAttached,
+  s3PublicUrl,
 }: Props) {
   const locale = useLocale()
   const t = useTranslations('ExpenseDocumentsInput')
@@ -47,11 +53,11 @@ export function ExpenseDocumentsInput({
   const { toast } = useToast()
 
   const handleFileChange = async (file: File) => {
-    if (file.size > MAX_FILE_SIZE) {
+    if (file.size > MAX_INPUT_FILE_SIZE) {
       toast({
         title: t('TooBigToast.title'),
         description: t('TooBigToast.description', {
-          maxSize: formatFileSize(MAX_FILE_SIZE, locale),
+          maxSize: formatFileSize(MAX_INPUT_FILE_SIZE, locale),
           size: formatFileSize(file.size, locale),
         }),
         variant: 'destructive',
@@ -62,9 +68,11 @@ export function ExpenseDocumentsInput({
     const upload = async () => {
       try {
         setPending(true)
-        const { width, height } = await getImageData(file)
+        const compressed = await compressImage(file)
+        const { width, height } = await getImageData(compressed)
         if (!width || !height) throw new Error('Cannot get image dimensions')
-        const { url } = await uploadToS3(file)
+        const { url: uploadUrl, key } = await uploadToS3(compressed)
+        const url = getPublicUploadUrl(s3PublicUrl, key, uploadUrl)
         updateDocuments([...documents, { id: randomId(), url, width, height }])
         onDocumentAttached?.()
       } catch (err) {
@@ -99,6 +107,7 @@ export function ExpenseDocumentsInput({
             key={doc.id}
             document={doc}
             documents={documents}
+            s3PublicUrl={s3PublicUrl}
             deleteDocument={(document) => {
               updateDocuments(documents.filter((d) => d.id !== document.id))
             }}
@@ -129,10 +138,13 @@ export function DocumentThumbnail({
   document,
   documents,
   deleteDocument,
+  s3PublicUrl,
 }: {
   document: ExpenseFormValues['documents'][number]
   documents: ExpenseFormValues['documents']
   deleteDocument: (document: ExpenseFormValues['documents'][number]) => void
+  /** Public base URL for uploaded documents, resolved on the server. */
+  s3PublicUrl?: string | null
 }) {
   const [open, setOpen] = useState(false)
   const [api, setApi] = useState<CarouselApi>()
@@ -162,6 +174,7 @@ export function DocumentThumbnail({
             className="object-contain"
             src={document.url}
             alt=""
+            unoptimized={isPublicUploadUrlConfigured(s3PublicUrl)}
           />
         </Button>
       </DialogTrigger>
@@ -207,6 +220,7 @@ export function DocumentThumbnail({
                     width={document.width}
                     height={document.height}
                     alt=""
+                    unoptimized={isPublicUploadUrlConfigured(s3PublicUrl)}
                   />
                 </CarouselItem>
               ))}

@@ -20,8 +20,10 @@ import { useCurrentGroup } from '../current-group-context'
 
 export default function GroupExpensesPageClient({
   enableReceiptExtract,
+  s3PublicUrl,
 }: {
   enableReceiptExtract: boolean
+  s3PublicUrl?: string | null
 }) {
   const t = useTranslations('Expenses')
   const { groupId } = useCurrentGroup()
@@ -37,7 +39,9 @@ export default function GroupExpensesPageClient({
           </CardHeader>
           <CardHeader className="p-4 sm:p-6 flex flex-row space-y-0 gap-2">
             <ExportButton groupId={groupId} />
-            {enableReceiptExtract && <CreateFromReceiptButton />}
+            {enableReceiptExtract && (
+              <CreateFromReceiptButton s3PublicUrl={s3PublicUrl} />
+            )}
             <Button asChild size="icon">
               <Link
                 href={`/groups/${groupId}/expenses/create`}

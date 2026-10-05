@@ -1398,6 +1398,7 @@ export function ExpenseForm({
                   <ExpenseDocumentsInput
                     documents={field.value ?? []}
                     updateDocuments={field.onChange}
+                    s3PublicUrl={runtimeFeatureFlags.s3PublicUrl}
                     onDocumentAttached={() =>
                       sendEvent(
                         { event: 'expense: attach document', props: {} },

@@ -73,6 +73,16 @@ const envSchema = z
     S3_UPLOAD_BUCKET: z.string().optional(),
     S3_UPLOAD_REGION: z.string().optional(),
     S3_UPLOAD_ENDPOINT: z.string().optional(),
+    // Public base URL that uploaded objects are read from. Required when the
+    // S3 API host (S3_UPLOAD_ENDPOINT) cannot also serve objects publicly, as
+    // with Cloudflare R2 custom domains / r2.dev. When set, uploaded URLs are
+    // built from this base instead of next-s3-upload's endpoint-derived URL
+    // (see src/lib/public-upload-url.ts), and the browser loads the image
+    // straight from storage rather than through the app server.
+    S3_PUBLIC_URL: z.preprocess(
+      interpretBlankEnvVarAsUndefined,
+      z.string().trim().url().optional(),
+    ),
     NEXT_PUBLIC_ENABLE_RECEIPT_EXTRACT: z.preprocess(
       interpretEnvVarAsBool,
       z.boolean().default(false),

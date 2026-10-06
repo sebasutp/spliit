@@ -24,6 +24,9 @@ export async function getRuntimeFeatureFlags() {
     enableCategoryExtract:
       parseFlag(process.env.ENABLE_CATEGORY_EXTRACT) ||
       env.NEXT_PUBLIC_ENABLE_CATEGORY_EXTRACT,
+    // Public base URL uploaded images are read from, passed to the client so
+    // image hosting can be configured at runtime (see S3_PUBLIC_URL in env.ts).
+    s3PublicUrl: env.S3_PUBLIC_URL ?? null,
   }
 }
 

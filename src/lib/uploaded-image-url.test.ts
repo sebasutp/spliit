@@ -10,6 +10,7 @@ const mockEnv = env as {
   S3_UPLOAD_ENDPOINT?: string
   S3_UPLOAD_BUCKET?: string
   S3_UPLOAD_REGION?: string
+  S3_PUBLIC_URL?: string
 }
 
 describe('isAllowedUploadUrl', () => {
@@ -17,6 +18,36 @@ describe('isAllowedUploadUrl', () => {
     delete mockEnv.S3_UPLOAD_ENDPOINT
     delete mockEnv.S3_UPLOAD_BUCKET
     delete mockEnv.S3_UPLOAD_REGION
+    delete mockEnv.S3_PUBLIC_URL
+  })
+
+  describe('with a dedicated public URL configured', () => {
+    beforeEach(() => {
+      // e.g. Cloudflare R2: a private S3 API endpoint plus a public custom
+      // domain that serves objects at the root.
+      mockEnv.S3_UPLOAD_ENDPOINT = 'https://accountid.r2.cloudflarestorage.com'
+      mockEnv.S3_PUBLIC_URL = 'https://files.example.com'
+    })
+
+    it('allows a URL on the public host', () => {
+      expect(
+        isAllowedUploadUrl('https://files.example.com/document-1.jpg'),
+      ).toBe(true)
+    })
+
+    it('does not trust the S3 API endpoint host', () => {
+      expect(
+        isAllowedUploadUrl(
+          'https://accountid.r2.cloudflarestorage.com/bucket/document-1.jpg',
+        ),
+      ).toBe(false)
+    })
+
+    it('rejects an unrelated host', () => {
+      expect(
+        isAllowedUploadUrl('https://evil.example.com/document-1.jpg'),
+      ).toBe(false)
+    })
   })
 
   describe('with a custom S3 endpoint configured', () => {

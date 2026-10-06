@@ -235,6 +235,21 @@ You can also use other S3 providers by providing a custom endpoint:
 S3_UPLOAD_ENDPOINT=http://localhost:9000
 ```
 
+#### Cloudflare R2
+
+R2 differs from MinIO in one important way: the S3 API endpoint that accepts presigned uploads (and requires credentials) is **not** the host that serves objects publicly. Uploads therefore still go to `S3_UPLOAD_ENDPOINT`, but reads are built from a separate `S3_PUBLIC_URL` — a [custom domain](https://developers.cloudflare.com/r2/buckets/public-buckets/#custom-domains) attached to the bucket, or its `r2.dev` hostname. Because a public host is configured, the app also tells `next/image` to serve receipts directly from R2 rather than proxying them through the server.
+
+```.env
+S3_UPLOAD_KEY=<R2 access key id>
+S3_UPLOAD_SECRET=<R2 secret access key>
+S3_UPLOAD_BUCKET=name-of-r2-bucket
+S3_UPLOAD_REGION=auto
+S3_UPLOAD_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+S3_PUBLIC_URL=https://files.example.com
+```
+
+As with AWS, enable public access on the bucket and allow `PUT` from your app's origin in the bucket's CORS settings.
+
 ### Create expense from receipt
 
 You can offer users to create expense by uploading a receipt. This feature relies on a [vision-capable OpenAI model](https://platform.openai.com/docs/guides/vision) and a public S3 storage endpoint.

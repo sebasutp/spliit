@@ -20,6 +20,7 @@ export default async function GroupExpensesPage() {
       enableReceiptExtract={
         env.ENABLE_RECEIPT_EXTRACT || env.NEXT_PUBLIC_ENABLE_RECEIPT_EXTRACT
       }
+      s3PublicUrl={env.S3_PUBLIC_URL ?? null}
     />
   )
 }

@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/components/ui/use-toast'
+import { useAnalytics } from '@/lib/analytics/context'
 import type { ReceiptPortionTarget } from '@/lib/enums'
 import {
   type DraftItem,
@@ -95,6 +96,8 @@ export default function ReceiptItemsPageClient({ groupId, expenseId }: Props) {
   const { toast } = useToast()
   const utils = trpc.useUtils()
   const router = useRouter()
+  const sendEvent = useAnalytics()
+  const itemsPath = `/groups/${groupId}/expenses/${expenseId}/items`
 
   const receiptQuery = trpc.groups.receipts.get.useQuery({ groupId, expenseId })
   const groupQuery = trpc.groups.get.useQuery({ groupId })
@@ -111,6 +114,7 @@ export default function ReceiptItemsPageClient({ groupId, expenseId }: Props) {
   const [newShared, setNewShared] = useState(false)
 
   const initialisedRef = useRef(false)
+  const itemizeTrackedRef = useRef(false)
   const pendingUpdatesRef = useRef(
     new Map<
       string,
@@ -126,6 +130,15 @@ export default function ReceiptItemsPageClient({ groupId, expenseId }: Props) {
       setDraft(toDraft(receiptData.receipt))
     }
   }, [receiptData])
+
+  // Report that a loaded receipt was opened in the items screen, once per
+  // mount. Guarded by a ref because a background refetch hands back a new
+  // `receiptData` object and would otherwise fire the event again.
+  useEffect(() => {
+    if (itemizeTrackedRef.current || !receiptData) return
+    itemizeTrackedRef.current = true
+    sendEvent({ event: 'receipt: itemize', props: {} }, itemsPath)
+  }, [receiptData, sendEvent, itemsPath])
 
   // Drop any pending debounced saves when the screen unmounts.
   useEffect(() => {
@@ -175,6 +188,7 @@ export default function ReceiptItemsPageClient({ groupId, expenseId }: Props) {
 
   const applyMutation = trpc.groups.receipts.applyToExpense.useMutation({
     onSuccess: () => {
+      sendEvent({ event: 'receipt: apply', props: {} }, itemsPath)
       toast({
         title: t('applySuccess.title'),
         description: t('applySuccess.description'),

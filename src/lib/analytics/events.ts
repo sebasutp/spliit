@@ -18,6 +18,8 @@ type BaseAnalyticsEvent =
   | { event: 'expense: attach document'; props: NoProps }
   | { event: 'expense: scan receipt'; props: NoProps }
   | { event: 'expense: create from receipt'; props: NoProps }
+  | { event: 'receipt: itemize'; props: NoProps }
+  | { event: 'receipt: apply'; props: NoProps }
 
 /**
  * Extension point for forks: replace `never` with your own events, e.g.

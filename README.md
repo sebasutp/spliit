@@ -267,6 +267,21 @@ OPENAI_API_KEY=XXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
 The model defaults to `gpt-5-nano` and can be changed with the optional `OPENAI_MODEL_RECEIPT_EXTRACT` variable — a larger model reads poor-quality photos more reliably, at a higher price per scan.
 
+### Receipt line items
+
+The items screen is an optional calculator that breaks a scanned receipt down into individual lines. It shows each line's quantity and splits it between participants or a shared pool, then computes provisional per-person totals. The expense itself is untouched until the user clicks **Apply to expense**, which writes those totals as a `BY_AMOUNT` split.
+
+Enable it with:
+
+```.env
+ENABLE_RECEIPT_ITEMS=true
+NEXT_PUBLIC_ENABLE_RECEIPT_ITEMS=true
+```
+
+`ENABLE_RECEIPT_ITEMS` implies `ENABLE_RECEIPT_EXTRACT` and needs `OPENAI_API_KEY`; S3/expense-documents are still required to host the image. The lines are read with a vision model, defaulting to `OPENAI_MODEL_RECEIPT_EXTRACT` and overridable with the optional `OPENAI_MODEL_RECEIPT_ITEMS_EXTRACT` variable.
+
+The parse is cached per `(groupId, imageUrl)`, so re-uploading the same image reuses the items instead of calling the model again. Items left unassigned are split evenly among the participants who have not opted out, while whole-bill charges — tax, tip, service, cover and delivery — are paid by everyone.
+
 ### Deduce category from title
 
 You can offer users to automatically deduce the expense category from the title. Since this feature relies on a OpenAI subscription, follow the signup instructions above and configure the following environment variables:

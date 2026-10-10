@@ -143,6 +143,13 @@ export function formatAmountAsDecimal(amount: number, currency: Currency) {
   return amountAsDecimal(amount, currency).toFixed(currency.decimal_digits)
 }
 
+/** Formats a quantity in thousandths as a compact, locale-aware unit string. */
+export function formatQuantityMilli(quantityMilli: number, locale: string) {
+  return (quantityMilli / 1000).toLocaleString(locale, {
+    maximumFractionDigits: 3,
+  })
+}
+
 export function formatFileSize(size: number, locale: string) {
   const formatNumber = (num: number) =>
     num.toLocaleString(locale, {

@@ -76,7 +76,7 @@ function renderFooter(
       participants={participants}
       currency={currency}
       reconciliation={{ printedTotal: 1200, itemsTotal: 1200, delta: 0 }}
-      canApply
+      applyBlocker={null}
       optedOutParticipantIds={[]}
       onApply={() => {}}
       onOptOutChange={() => {}}
@@ -134,8 +134,8 @@ describe('ReceiptFooter', () => {
     ).toBeVisible()
   })
 
-  it('disables Apply when canApply is false and shows the explanation', () => {
-    renderFooter({ canApply: false })
+  it('disables Apply when a blocker is set and shows the explanation', () => {
+    renderFooter({ applyBlocker: 'ALL_OPTED_OUT' })
 
     const apply = screen.getByRole('button', { name: 'Apply to expense' })
     expect(apply).toBeDisabled()
@@ -144,8 +144,22 @@ describe('ReceiptFooter', () => {
     ).toBeVisible()
   })
 
+  it('explains a negative-share blocker distinctly from the opted-out one', () => {
+    renderFooter({ applyBlocker: 'NEGATIVE_SHARE' })
+
+    expect(
+      screen.getByRole('button', { name: 'Apply to expense' }),
+    ).toBeDisabled()
+    expect(
+      screen.getByText(messages.ReceiptItems.footer.negativeShare),
+    ).toBeVisible()
+    expect(
+      screen.queryByText(messages.ReceiptItems.footer.allOptedOut),
+    ).not.toBeInTheDocument()
+  })
+
   it('replaces Apply with an empty hint when the receipt has no items', () => {
-    renderFooter({ empty: true, canApply: false })
+    renderFooter({ applyBlocker: 'EMPTY' })
 
     expect(screen.getByText(messages.ReceiptItems.empty)).toBeVisible()
     expect(
@@ -167,8 +181,8 @@ describe('ReceiptFooter', () => {
     ).toBeVisible()
   })
 
-  it('enables Apply when canApply is true', () => {
-    renderFooter({ canApply: true })
+  it('enables Apply when there is no blocker', () => {
+    renderFooter({ applyBlocker: null })
 
     expect(
       screen.getByRole('button', { name: 'Apply to expense' }),

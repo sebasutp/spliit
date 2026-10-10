@@ -1,6 +1,10 @@
 import type { ReceiptPortionTarget } from '@/lib/enums'
 import type { ReceiptSplitResult } from '@/lib/receipt-split'
-import { computeReceiptSplit, toReceiptSplitItems } from '@/lib/receipt-split'
+import {
+  computeReceiptSplit,
+  consumeItemPortions,
+  toReceiptSplitItems,
+} from '@/lib/receipt-split'
 import { distributeAmount } from '@/lib/shares'
 
 export type DraftPortion = {
@@ -177,29 +181,6 @@ export function setItemPortions(
   }))
 }
 
-/** Assigns the item's full quantity to a single participant or to SHARED. */
-export function assignItem(
-  draft: ReceiptDraft,
-  itemId: string,
-  target: ReceiptPortionTarget,
-  participantId: string | null = null,
-): ReceiptDraft {
-  const item = findItem(draft, itemId)
-  if (!item) return { ...draft, items: [...draft.items] }
-  return setItemPortions(draft, itemId, [
-    {
-      target,
-      participantId: target === 'SHARED' ? null : participantId,
-      quantityMilli: item.quantityMilli,
-    },
-  ])
-}
-
-/** Removes every portion, returning the item to the unassigned pool. */
-export function clearItem(draft: ReceiptDraft, itemId: string): ReceiptDraft {
-  return setItemPortions(draft, itemId, [])
-}
-
 /**
  * Divides the item's quantity equally among the participants (largest
  * remainder, so the portions sum to exactly the item quantity).
@@ -223,22 +204,6 @@ export function splitItemEqually(
 }
 
 /**
- * Appends a portion, clamped to the quantity that is still unassigned. Adding
- * more than remains is a no-op.
- */
-export function addPortion(
-  draft: ReceiptDraft,
-  itemId: string,
-  portion: DraftPortion,
-): ReceiptDraft {
-  return mapItem(draft, itemId, (item) => {
-    const clamped = clampPortion(portion, itemRemainingQuantity(item))
-    if (!clamped) return cloneItem(item)
-    return { ...item, portions: [...item.portions, clamped] }
-  })
-}
-
-/**
  * Removes the portion at `index`; the freed quantity becomes part of the
  * derived unassigned remainder.
  */
@@ -252,34 +217,6 @@ export function removePortion(
     return {
       ...item,
       portions: item.portions.filter((_, i) => i !== index),
-    }
-  })
-}
-
-/**
- * Sets a portion's quantity, clamped to `>= 0` and to the quantity the item's
- * other portions leave free.
- */
-export function setPortionQuantity(
-  draft: ReceiptDraft,
-  itemId: string,
-  index: number,
-  quantityMilli: number,
-): ReceiptDraft {
-  return mapItem(draft, itemId, (item) => {
-    if (!item.portions[index]) return cloneItem(item)
-    const others = item.portions.reduce(
-      (sum, portion, i) =>
-        i === index ? sum : sum + toMilli(portion.quantityMilli),
-      0,
-    )
-    const available = Math.max(toMilli(item.quantityMilli) - others, 0)
-    const quantity = Math.min(toMilli(quantityMilli), available)
-    return {
-      ...item,
-      portions: item.portions.map((portion, i) =>
-        i === index ? { ...portion, quantityMilli: quantity } : portion,
-      ),
     }
   })
 }
@@ -382,24 +319,6 @@ export function itemRemainingQuantity(item: DraftItem): number {
   return Math.max(toMilli(item.quantityMilli) - itemAssignedQuantity(item), 0)
 }
 
-/**
- * The portions the UI should render: the stored ones, or a single full-quantity
- * SHARED portion for a shared item with no portions yet, or nothing.
- */
-export function itemEffectivePortions(item: DraftItem): DraftPortion[] {
-  if (item.portions.length > 0) return item.portions
-  if (item.isShared) {
-    return [
-      {
-        target: 'SHARED',
-        participantId: null,
-        quantityMilli: item.quantityMilli,
-      },
-    ]
-  }
-  return []
-}
-
 export type SectionEntry = {
   item: DraftItem
   quantityMilli: number
@@ -412,9 +331,11 @@ export type ReceiptSections = {
 }
 
 /**
- * Buckets each item's effective portions into the Unassigned, Shared and
- * per-participant sections, consuming quantity in order and deriving the
- * unassigned remainder. Every participant gets an entry, in the given order.
+ * Buckets each item's portions into the Unassigned, Shared and per-participant
+ * sections. Consumption (clamping, the shared-item fallback and the derived
+ * unassigned remainder) is delegated to the split module, so the sections and
+ * the money split can never disagree. Every participant gets an entry, in the
+ * given order.
  */
 export function buildReceiptSections(
   draft: ReceiptDraft,
@@ -423,29 +344,30 @@ export function buildReceiptSections(
   const unassigned: SectionEntry[] = []
   const shared: SectionEntry[] = []
   const order = Array.from(new Set(participantIds))
+  const knownParticipantIds = new Set(order)
   const entriesByParticipant = new Map<string, SectionEntry[]>(
     order.map((participantId) => [participantId, []]),
   )
 
   for (const item of draft.items) {
-    let remaining = toMilli(item.quantityMilli)
-    for (const portion of itemEffectivePortions(item)) {
-      const quantity = Math.min(toMilli(portion.quantityMilli), remaining)
-      if (quantity <= 0) continue
+    const [splitItem] = toReceiptSplitItems([item])
+    const { portions, unassigned: remainder } = consumeItemPortions(
+      splitItem,
+      knownParticipantIds,
+    )
+
+    for (const portion of portions) {
       if (portion.target === 'SHARED') {
-        shared.push({ item, quantityMilli: quantity })
-        remaining -= quantity
-        continue
+        shared.push({ item, quantityMilli: portion.quantityMilli })
+      } else {
+        entriesByParticipant
+          .get(portion.participantId)!
+          .push({ item, quantityMilli: portion.quantityMilli })
       }
-      const entries = portion.participantId
-        ? entriesByParticipant.get(portion.participantId)
-        : undefined
-      if (!entries) continue
-      entries.push({ item, quantityMilli: quantity })
-      remaining -= quantity
     }
-    if (remaining > 0) {
-      unassigned.push({ item, quantityMilli: remaining })
+
+    if (remainder > 0) {
+      unassigned.push({ item, quantityMilli: remainder })
     }
   }
 
@@ -473,11 +395,26 @@ export function reconcileDraft(draft: ReceiptDraft): {
   }
 }
 
-/** Apply is blocked when everyone opted out while an unassigned pool remains, or when the receipt has no items. */
-export function canApplyDraft(
+/**
+ * Why Apply is blocked, or `null` when it is allowed. Mirrors the server-side
+ * guards in `applyReceiptToExpense` so the UI never enables a button the server
+ * will reject:
+ * - `EMPTY`: the receipt has no items to apply.
+ * - `ALL_OPTED_OUT`: there is an unassigned pool but nobody shares it.
+ * - `NEGATIVE_SHARE`: a negative total (e.g. an adjustment) pushes a
+ *   participant below zero, which the `BY_AMOUNT` split cannot represent.
+ */
+export type ReceiptApplyBlocker = 'EMPTY' | 'ALL_OPTED_OUT' | 'NEGATIVE_SHARE'
+
+export function receiptApplyBlocker(
   draft: ReceiptDraft,
   participantIds: string[],
-): boolean {
+): ReceiptApplyBlocker | null {
   const split = computeDraftSplit(draft, participantIds)
-  return !split.allOptedOut && split.itemsTotal !== 0
+  if (split.itemsTotal === 0) return 'EMPTY'
+  if (split.allOptedOut) return 'ALL_OPTED_OUT'
+  if (split.participants.some((participant) => participant.total < 0)) {
+    return 'NEGATIVE_SHARE'
+  }
+  return null
 }

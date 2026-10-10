@@ -316,7 +316,6 @@
     "title": "Receipt items",
     "merchant": "Merchant",
     "printedTotal": "Printed total",
-    "loading": "Loading receipt…",
     "noReceipt": "No receipt is linked to this expense yet.",
     "empty": "No items yet. Add one to start splitting.",
     "saveError": {
@@ -367,14 +366,12 @@
       "custom": "Custom split",
       "customHint": "Enter quantities in units for each target.",
       "shared": "Shared",
-      "quantity": "Quantity",
       "selectParticipant": "Select a participant",
       "exceeds": "The assigned quantity exceeds the item quantity.",
       "confirm": "Assign",
       "cancel": "Cancel"
     },
     "footer": {
-      "total": "Total",
       "own": "Own",
       "shared": "Shared",
       "unassigned": "Unassigned",
@@ -384,6 +381,7 @@
       "itemsTotal": "Items total",
       "apply": "Apply to expense",
       "allOptedOut": "Everyone opted out, but some items are still unassigned.",
+      "negativeShare": "A negative total leaves someone owing less than nothing. Adjust the items before applying.",
       "divergent": "Receipt values differ · Apply again"
     },
     "applySuccess": {

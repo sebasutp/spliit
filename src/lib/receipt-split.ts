@@ -1,8 +1,5 @@
-import { RECEIPT_PORTION_TARGETS, type ReceiptPortionTarget } from '@/lib/enums'
+import type { ReceiptPortionTarget } from '@/lib/enums'
 import { distributeAmount, weightedApportion } from '@/lib/shares'
-
-export { RECEIPT_PORTION_TARGETS }
-export type { ReceiptPortionTarget }
 
 export type ReceiptPortion = {
   target: ReceiptPortionTarget
@@ -84,6 +81,54 @@ type PartDestination =
   | { kind: 'shared' }
   | { kind: 'unassigned' }
 
+export type ConsumedPortion =
+  | { target: 'PARTICIPANT'; participantId: string; quantityMilli: number }
+  | { target: 'SHARED'; quantityMilli: number }
+
+/**
+ * The single definition of the per-item allocation rule: floors each portion
+ * quantity, drops non-positive quantities (and participant-less or out-of-group
+ * PARTICIPANT portions), and clamps every portion to the running budget so the
+ * consumed quantities never exceed the item's own quantity. A zero, negative or
+ * NaN item quantity still counts as one whole unit.
+ *
+ * Both `computeReceiptSplit` (which apportions money over the consumed
+ * portions) and the UI's section builder use this, so clamping and the
+ * shared/unassigned split can never diverge between them.
+ */
+export function consumeItemPortions(
+  item: { quantityMilli: number; portions: ReceiptPortion[] },
+  knownParticipantIds: ReadonlySet<string>,
+): { portions: ConsumedPortion[]; unassigned: number } {
+  const total = Math.max(Math.trunc(item.quantityMilli) || 0, 1)
+  let remaining = total
+  const portions: ConsumedPortion[] = []
+
+  for (const portion of item.portions) {
+    const quantity = Math.floor(portion.quantityMilli)
+    if (!(quantity > 0)) continue
+    if (portion.target === 'PARTICIPANT') {
+      const participantId = portion.participantId
+      if (!participantId || !knownParticipantIds.has(participantId)) continue
+      const allowed = Math.min(quantity, remaining)
+      if (allowed <= 0) continue
+      remaining -= allowed
+      portions.push({
+        target: 'PARTICIPANT',
+        participantId,
+        quantityMilli: allowed,
+      })
+    } else {
+      const allowed = Math.min(quantity, remaining)
+      if (allowed <= 0) continue
+      remaining -= allowed
+      portions.push({ target: 'SHARED', quantityMilli: allowed })
+    }
+  }
+
+  return { portions, unassigned: remaining }
+}
+
 /**
  * Splits a receipt's line items across participants.
  *
@@ -109,29 +154,21 @@ export function computeReceiptSplit(
 
   for (const item of input.items) {
     // A zero, negative or NaN quantity still consumes one whole unit.
-    const total = Math.max(Math.trunc(item.quantityMilli) || 0, 1)
+    const { portions, unassigned } = consumeItemPortions(item, participantSet)
 
     const destinations: PartDestination[] = []
     const weights: number[] = []
-    let remaining = total
     let sharedWeight = 0
 
-    for (const portion of item.portions) {
-      const quantity = Math.floor(portion.quantityMilli)
-      if (!(quantity > 0)) continue
+    for (const portion of portions) {
       if (portion.target === 'PARTICIPANT') {
-        const participantId = portion.participantId
-        if (!participantId || !participantSet.has(participantId)) continue
-        const allowed = Math.min(quantity, remaining)
-        if (allowed <= 0) continue
-        remaining -= allowed
-        weights.push(allowed)
-        destinations.push({ kind: 'direct', participantId })
+        weights.push(portion.quantityMilli)
+        destinations.push({
+          kind: 'direct',
+          participantId: portion.participantId,
+        })
       } else {
-        const allowed = Math.min(quantity, remaining)
-        if (allowed <= 0) continue
-        remaining -= allowed
-        sharedWeight += allowed
+        sharedWeight += portion.quantityMilli
       }
     }
 
@@ -139,8 +176,8 @@ export function computeReceiptSplit(
       weights.push(sharedWeight)
       destinations.push({ kind: 'shared' })
     }
-    if (remaining > 0) {
-      weights.push(remaining)
+    if (unassigned > 0) {
+      weights.push(unassigned)
       destinations.push({ kind: 'unassigned' })
     }
 

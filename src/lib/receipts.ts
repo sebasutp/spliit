@@ -240,9 +240,11 @@ export async function linkReceiptToExpense(
 }
 
 /**
- * Replaces an item's portions. `isShared` is derived when portions are present
- * (a shared item is one whose portions are all SHARED) and left untouched when
- * the list is empty.
+ * Replaces an item's portions. `isShared` is derived from the portions when
+ * there are any (a shared item is one whose portions are all SHARED). Clearing
+ * every portion returns the item to the unassigned pool, so `isShared` is reset
+ * to false; otherwise the split would re-materialise a full SHARED portion from
+ * the stored flag.
  */
 export async function setReceiptItemPortions(
   receiptId: string,
@@ -256,26 +258,28 @@ export async function setReceiptItemPortions(
   await prisma.$transaction(async (transaction) => {
     await transaction.receiptItemPortion.deleteMany({ where: { itemId } })
 
-    if (portions.length === 0) return
-
-    await transaction.receiptItemPortion.createMany({
-      data: portions.map((portion) => ({
-        itemId,
-        target: portion.target,
-        participantId:
-          portion.target === ReceiptPortionTarget.SHARED
-            ? null
-            : portion.participantId,
-        quantityMilli: portion.quantityMilli,
-      })),
-    })
+    if (portions.length > 0) {
+      await transaction.receiptItemPortion.createMany({
+        data: portions.map((portion) => ({
+          itemId,
+          target: portion.target,
+          participantId:
+            portion.target === ReceiptPortionTarget.SHARED
+              ? null
+              : portion.participantId,
+          quantityMilli: portion.quantityMilli,
+        })),
+      })
+    }
 
     await transaction.receiptItem.updateMany({
       where: { id: itemId, receiptId },
       data: {
-        isShared: portions.every(
-          (portion) => portion.target === ReceiptPortionTarget.SHARED,
-        ),
+        isShared:
+          portions.length > 0 &&
+          portions.every(
+            (portion) => portion.target === ReceiptPortionTarget.SHARED,
+          ),
       },
     })
   })

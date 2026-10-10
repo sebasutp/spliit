@@ -22,17 +22,11 @@ import {
   amountAsMinorUnits,
   formatAmountAsDecimal,
   formatCurrency,
+  formatQuantityMilli,
 } from '@/lib/utils'
 import { Pencil, Trash2, UserPlus, X } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
 import { useState } from 'react'
-
-/** Formats a quantity in thousandths as a compact unit string. */
-export function formatQuantityMilli(quantityMilli: number, locale: string) {
-  return (quantityMilli / 1000).toLocaleString(locale, {
-    maximumFractionDigits: 3,
-  })
-}
 
 export type ItemEditPatch = {
   name?: string

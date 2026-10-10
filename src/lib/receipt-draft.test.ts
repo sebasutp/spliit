@@ -1,20 +1,16 @@
 import {
   addItem,
-  addPortion,
-  assignItem,
   buildReceiptSections,
-  canApplyDraft,
-  clearItem,
   computeDraftSplit,
   deleteItem,
   draftFromReceipt,
   itemAssignedQuantity,
   itemRemainingQuantity,
+  receiptApplyBlocker,
   reconcileDraft,
   removePortion,
   setItemPortions,
   setOptOut,
-  setPortionQuantity,
   splitItemEqually,
   updateItem,
   type DraftItem,
@@ -176,44 +172,6 @@ describe('setItemPortions', () => {
   })
 })
 
-describe('assignItem / clearItem', () => {
-  it('assigns the item’s full quantity to a participant', () => {
-    const draft = makeDraft({
-      items: [makeItem({ id: 'i', quantityMilli: 2000 })],
-    })
-    const next = assignItem(draft, 'i', 'PARTICIPANT', 'p1')
-
-    expect(itemById(next, 'i').portions).toEqual([
-      participantPortion('p1', 2000),
-    ])
-  })
-
-  it('assigns the item’s full quantity to SHARED with a null participant', () => {
-    const draft = makeDraft({
-      items: [makeItem({ id: 'i', quantityMilli: 2000 })],
-    })
-    const next = assignItem(draft, 'i', 'SHARED')
-
-    expect(itemById(next, 'i').portions).toEqual([sharedPortion(2000)])
-  })
-
-  it('clearItem returns everything to the unassigned pool', () => {
-    const draft = makeDraft({
-      items: [
-        makeItem({
-          id: 'i',
-          quantityMilli: 1000,
-          portions: [participantPortion('p1', 1000)],
-        }),
-      ],
-    })
-    const next = clearItem(draft, 'i')
-
-    expect(itemById(next, 'i').portions).toEqual([])
-    expect(itemRemainingQuantity(itemById(next, 'i'))).toBe(1000)
-  })
-})
-
 describe('splitItemEqually', () => {
   it('splits 1000 three ways, leaving nothing unassigned', () => {
     const draft = makeDraft({
@@ -239,64 +197,7 @@ describe('splitItemEqually', () => {
   })
 })
 
-describe('addPortion / removePortion / setPortionQuantity', () => {
-  it('addPortion clamps to the remaining quantity', () => {
-    const draft = makeDraft({
-      items: [
-        makeItem({
-          id: 'i',
-          quantityMilli: 1000,
-          portions: [participantPortion('p1', 600)],
-        }),
-      ],
-    })
-    const next = addPortion(draft, 'i', participantPortion('p2', 600))
-
-    expect(itemById(next, 'i').portions).toEqual([
-      participantPortion('p1', 600),
-      participantPortion('p2', 400),
-    ])
-  })
-
-  it('addPortion adds nothing when the item is already full', () => {
-    const draft = makeDraft({
-      items: [
-        makeItem({
-          id: 'i',
-          quantityMilli: 1000,
-          portions: [participantPortion('p1', 1000)],
-        }),
-      ],
-    })
-    const next = addPortion(draft, 'i', participantPortion('p2', 100))
-
-    expect(itemById(next, 'i').portions).toEqual([
-      participantPortion('p1', 1000),
-    ])
-  })
-
-  it('addPortion normalizes SHARED and drops a participant-less PARTICIPANT', () => {
-    const draft = makeDraft({ items: [makeItem({ id: 'i' })] })
-
-    expect(
-      itemById(
-        addPortion(draft, 'i', {
-          target: 'SHARED',
-          participantId: 'ignored',
-          quantityMilli: 300,
-        }),
-        'i',
-      ).portions,
-    ).toEqual([sharedPortion(300)])
-
-    const withNull = addPortion(draft, 'i', {
-      target: 'PARTICIPANT',
-      participantId: null,
-      quantityMilli: 300,
-    })
-    expect(itemById(withNull, 'i').portions).toEqual([])
-  })
-
+describe('removePortion', () => {
   it('removePortion returns the freed quantity to the unassigned pool', () => {
     const draft = makeDraft({
       items: [
@@ -318,34 +219,6 @@ describe('addPortion / removePortion / setPortionQuantity', () => {
     ])
     expect(itemRemainingQuantity(itemById(next, 'i'))).toBe(600)
     expect(computeDraftSplit(next, ['p1', 'p2']).unassignedPool).toBe(600)
-  })
-
-  it('setPortionQuantity clamps to the quantity the other portions leave free', () => {
-    const draft = makeDraft({
-      items: [
-        makeItem({
-          id: 'i',
-          quantityMilli: 1000,
-          portions: [
-            participantPortion('p1', 600),
-            participantPortion('p2', 400),
-          ],
-        }),
-      ],
-    })
-
-    expect(
-      itemById(setPortionQuantity(draft, 'i', 0, 900), 'i').portions[0]
-        .quantityMilli,
-    ).toBe(600)
-    expect(
-      itemById(setPortionQuantity(draft, 'i', 0, 100), 'i').portions[0]
-        .quantityMilli,
-    ).toBe(100)
-    expect(
-      itemById(setPortionQuantity(draft, 'i', 1, -50), 'i').portions[1]
-        .quantityMilli,
-    ).toBe(0)
   })
 })
 
@@ -522,26 +395,73 @@ describe('reconcileDraft', () => {
   })
 })
 
-describe('canApplyDraft', () => {
+describe('receiptApplyBlocker', () => {
   it('blocks only when everyone opted out with a non-empty unassigned pool', () => {
     const base = makeDraft({
       items: [makeItem({ id: 'i', quantityMilli: 1000, amount: 1000 })],
     })
-    expect(canApplyDraft(base, ['p1', 'p2'])).toBe(true)
+    expect(receiptApplyBlocker(base, ['p1', 'p2'])).toBeNull()
 
     const allOut = setOptOut(setOptOut(base, 'p1', true), 'p2', true)
-    expect(canApplyDraft(allOut, ['p1', 'p2'])).toBe(false)
+    expect(receiptApplyBlocker(allOut, ['p1', 'p2'])).toBe('ALL_OPTED_OUT')
 
-    const assigned = assignItem(allOut, 'i', 'PARTICIPANT', 'p1')
-    expect(canApplyDraft(assigned, ['p1', 'p2'])).toBe(true)
+    const assigned = setItemPortions(allOut, 'i', [
+      participantPortion('p1', 1000),
+    ])
+    expect(receiptApplyBlocker(assigned, ['p1', 'p2'])).toBeNull()
   })
 
   it('blocks when the items total is zero', () => {
-    expect(canApplyDraft(makeDraft(), ['p1', 'p2'])).toBe(false)
+    expect(receiptApplyBlocker(makeDraft(), ['p1', 'p2'])).toBe('EMPTY')
 
     const zeroAmount = makeDraft({
       items: [makeItem({ id: 'i', amount: 0 })],
     })
-    expect(canApplyDraft(zeroAmount, ['p1', 'p2'])).toBe(false)
+    expect(receiptApplyBlocker(zeroAmount, ['p1', 'p2'])).toBe('EMPTY')
+  })
+
+  it('blocks a negative participant total the BY_AMOUNT split cannot represent', () => {
+    // A 10.00 dish assigned to p1 plus a 15.00 whole-bill discount pushes p2
+    // below zero (the discount is shared by everyone). The server refuses this
+    // state, so the UI must block Apply too.
+    const draft = makeDraft({
+      items: [
+        makeItem({
+          id: 'dish',
+          quantityMilli: 1000,
+          amount: 1000,
+          portions: [participantPortion('p1', 1000)],
+        }),
+        makeItem({
+          id: 'discount',
+          quantityMilli: 1000,
+          amount: -1500,
+          isShared: true,
+          isAdjustment: true,
+        }),
+      ],
+    })
+
+    const split = computeDraftSplit(draft, ['p1', 'p2'])
+    expect(split.participants.some((share) => share.total < 0)).toBe(true)
+
+    expect(receiptApplyBlocker(draft, ['p1', 'p2'])).toBe('NEGATIVE_SHARE')
+  })
+
+  it('allows a positive adjustment that keeps every total non-negative', () => {
+    const draft = makeDraft({
+      items: [
+        makeItem({ id: 'dish', quantityMilli: 1000, amount: 1000 }),
+        makeItem({
+          id: 'tip',
+          quantityMilli: 1000,
+          amount: 200,
+          isShared: true,
+          isAdjustment: true,
+        }),
+      ],
+    })
+
+    expect(receiptApplyBlocker(draft, ['p1', 'p2'])).toBeNull()
   })
 })

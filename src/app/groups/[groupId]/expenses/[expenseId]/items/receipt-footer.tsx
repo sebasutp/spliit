@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import type { Currency } from '@/lib/currency'
+import type { ReceiptApplyBlocker } from '@/lib/receipt-draft'
 import type { ReceiptSplitResult } from '@/lib/receipt-split'
 import { formatCurrency } from '@/lib/utils'
 import { useLocale, useTranslations } from 'next-intl'
@@ -22,10 +23,8 @@ type Props = {
   participants: ReceiptFooterParticipant[]
   currency: Currency
   reconciliation: ReceiptFooterReconciliation
-  /** Whether Apply is allowed; false when everyone opted out or no items exist. */
-  canApply: boolean
-  /** When true the receipt has no items, so Apply is replaced by an empty hint. */
-  empty?: boolean
+  /** Why Apply is blocked, or null when it is allowed. `'EMPTY'` is shown as the empty hint. */
+  applyBlocker: ReceiptApplyBlocker | null
   /** When true, the linked expense no longer matches the items total. */
   divergent?: boolean
   optedOutParticipantIds: string[]
@@ -44,8 +43,7 @@ export function ReceiptFooter({
   participants,
   currency,
   reconciliation,
-  canApply,
-  empty = false,
+  applyBlocker,
   divergent = false,
   optedOutParticipantIds,
   onApply,
@@ -61,6 +59,7 @@ export function ReceiptFooter({
   const { printedTotal, itemsTotal, delta } = reconciliation
   const hasPrintedTotal = printedTotal !== null
   const reconciles = hasPrintedTotal && delta === 0
+  const empty = applyBlocker === 'EMPTY'
 
   return (
     <div className="sticky bottom-0 z-10 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
@@ -158,14 +157,19 @@ export function ReceiptFooter({
               <>
                 <Button
                   onClick={onApply}
-                  disabled={!canApply || applying}
+                  disabled={applyBlocker !== null || applying}
                   data-testid="apply-button"
                 >
                   {t('footer.apply')}
                 </Button>
-                {!canApply ? (
-                  <p className="text-xs text-destructive">
-                    {t('footer.allOptedOut')}
+                {applyBlocker !== null ? (
+                  <p
+                    className="text-xs text-destructive"
+                    data-testid="apply-blocker"
+                  >
+                    {applyBlocker === 'NEGATIVE_SHARE'
+                      ? t('footer.negativeShare')
+                      : t('footer.allOptedOut')}
                   </p>
                 ) : null}
               </>

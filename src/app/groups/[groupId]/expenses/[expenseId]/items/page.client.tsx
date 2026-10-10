@@ -5,7 +5,6 @@ import { ReceiptFooter } from '@/app/groups/[groupId]/expenses/[expenseId]/items
 import {
   type ItemEditPatch,
   ReceiptItemRow,
-  formatQuantityMilli,
 } from '@/app/groups/[groupId]/expenses/[expenseId]/items/receipt-item-row'
 import { ReceiptSection } from '@/app/groups/[groupId]/expenses/[expenseId]/items/receipt-section'
 import { Button } from '@/components/ui/button'
@@ -22,13 +21,13 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/components/ui/use-toast'
 import { useAnalytics } from '@/lib/analytics/context'
 import type { ReceiptPortionTarget } from '@/lib/enums'
+import { useActiveUser } from '@/lib/hooks'
 import {
   type DraftItem,
   type DraftPortion,
   type ReceiptDraft,
   type SectionEntry,
   buildReceiptSections,
-  canApplyDraft,
   computeDraftSplit,
   deleteItem as draftDeleteItem,
   draftFromReceipt,
@@ -36,11 +35,13 @@ import {
   setItemPortions as draftSetItemPortions,
   setOptOut as draftSetOptOut,
   updateItem as draftUpdateItem,
+  receiptApplyBlocker,
   reconcileDraft,
 } from '@/lib/receipt-draft'
 import {
   amountAsMinorUnits,
   formatCurrency,
+  formatQuantityMilli,
   getCurrencyFromGroup,
 } from '@/lib/utils'
 import { trpc } from '@/trpc/client'
@@ -98,6 +99,11 @@ export default function ReceiptItemsPageClient({ groupId, expenseId }: Props) {
   const router = useRouter()
   const sendEvent = useAnalytics()
   const itemsPath = `/groups/${groupId}/expenses/${expenseId}/items`
+  const activeUser = useActiveUser(groupId)
+  // Preserve activity-log attribution the way the expense form does; 'None'
+  // means the user explicitly picked "no one".
+  const activeParticipantId =
+    activeUser && activeUser !== 'None' ? activeUser : undefined
 
   const receiptQuery = trpc.groups.receipts.get.useQuery({ groupId, expenseId })
   const groupQuery = trpc.groups.get.useQuery({ groupId })
@@ -241,8 +247,8 @@ export default function ReceiptItemsPageClient({ groupId, expenseId }: Props) {
     () => (draft ? reconcileDraft(draft) : null),
     [draft],
   )
-  const canApply = useMemo(
-    () => (draft ? canApplyDraft(draft, participantIds) : false),
+  const applyBlocker = useMemo(
+    () => (draft ? receiptApplyBlocker(draft, participantIds) : null),
     [draft, participantIds],
   )
 
@@ -283,7 +289,12 @@ export default function ReceiptItemsPageClient({ groupId, expenseId }: Props) {
       // would silently drop the user's latest edits.
       return
     }
-    applyMutation.mutate({ groupId, receiptId, expenseId })
+    applyMutation.mutate({
+      groupId,
+      receiptId,
+      expenseId,
+      participantId: activeParticipantId,
+    })
   }
 
   // Applying is never automatic: a divergent expense needs an explicit confirm.
@@ -404,14 +415,20 @@ export default function ReceiptItemsPageClient({ groupId, expenseId }: Props) {
         ? Math.round(parsedQuantity * 1000)
         : 1000
 
-    await addItemMutation.mutateAsync({
-      groupId,
-      receiptId,
-      name,
-      quantityMilli,
-      amount: Math.max(amountAsMinorUnits(parsedAmount, currency), 1),
-      isShared: newShared,
-    })
+    try {
+      await addItemMutation.mutateAsync({
+        groupId,
+        receiptId,
+        name,
+        quantityMilli,
+        amount: Math.max(amountAsMinorUnits(parsedAmount, currency), 1),
+        isShared: newShared,
+      })
+    } catch {
+      // The mutation's onError already toasted and reloaded the draft; keep the
+      // dialog open so the user can retry their input.
+      return
+    }
 
     setAddingItem(false)
     setNewName('')
@@ -523,8 +540,7 @@ export default function ReceiptItemsPageClient({ groupId, expenseId }: Props) {
         participants={footerParticipants}
         currency={currency}
         reconciliation={reconciliation}
-        canApply={canApply}
-        empty={split.itemsTotal === 0}
+        applyBlocker={applyBlocker}
         divergent={divergent}
         optedOutParticipantIds={draft.optedOutParticipantIds}
         onOptOutChange={handleToggleOptOut}

@@ -273,7 +273,8 @@
     "save": "Save",
     "saving": "Saving…",
     "cancel": "Cancel",
-    "reimbursement": "Reimbursement"
+    "reimbursement": "Reimbursement",
+    "itemizeReceipt": "Itemize receipt"
   },
   "ExpenseDocumentsInput": {
     "TooBigToast": {
@@ -381,7 +382,22 @@
       "offBy": "Off by {amount}",
       "itemsTotal": "Items total",
       "apply": "Apply to expense",
-      "allOptedOut": "Everyone opted out, but some items are still unassigned."
+      "allOptedOut": "Everyone opted out, but some items are still unassigned.",
+      "divergent": "Receipt values differ · Apply again"
+    },
+    "applySuccess": {
+      "title": "Expense updated",
+      "description": "The receipt items were applied to the expense."
+    },
+    "applyError": {
+      "title": "Couldn’t apply the receipt"
+    },
+    "applyConfirm": {
+      "title": "Update the expense?",
+      "description": "The expense total differs from the receipt items total. Applying will overwrite the expense amount and its split.",
+      "total": "total {current} → {new}",
+      "cancel": "Cancel",
+      "confirm": "Apply"
     }
   },
   "Balances": {

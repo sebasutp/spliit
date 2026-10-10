@@ -1,5 +1,5 @@
-import { weightedApportion, distributeAmount } from '@/lib/shares'
 import { RECEIPT_PORTION_TARGETS, type ReceiptPortionTarget } from '@/lib/enums'
+import { distributeAmount, weightedApportion } from '@/lib/shares'
 
 export { RECEIPT_PORTION_TARGETS }
 export type { ReceiptPortionTarget }

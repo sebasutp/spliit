@@ -1306,11 +1306,22 @@ export function ExpenseForm({
               className="mt-5"
               defaultOpen={form.getValues().splitMode !== 'EVENLY'}
             >
-              <CollapsibleTrigger asChild>
-                <Button variant="link" className="-mx-4">
-                  {t('advancedOptions')}
-                </Button>
-              </CollapsibleTrigger>
+              <div className="flex flex-wrap items-center gap-4">
+                {runtimeFeatureFlags.enableReceiptItems && expense?.receipt ? (
+                  <Button asChild variant="link" className="-mx-4">
+                    <Link
+                      href={`/groups/${group.id}/expenses/${expense.id}/items`}
+                    >
+                      {t('itemizedSplit')}
+                    </Link>
+                  </Button>
+                ) : null}
+                <CollapsibleTrigger asChild>
+                  <Button variant="link" className="-mx-4">
+                    {t('advancedOptions')}
+                  </Button>
+                </CollapsibleTrigger>
+              </div>
               <CollapsibleContent>
                 <div className="grid sm:grid-cols-2 gap-6 pt-3">
                   <FormField

@@ -274,7 +274,7 @@
     "saving": "Saving…",
     "cancel": "Cancel",
     "reimbursement": "Reimbursement",
-    "itemizeReceipt": "Itemize receipt"
+    "itemizedSplit": "Itemized Split"
   },
   "ExpenseDocumentsInput": {
     "TooBigToast": {
@@ -314,6 +314,7 @@
   },
   "ReceiptItems": {
     "title": "Receipt items",
+    "backToExpense": "Back to expense",
     "merchant": "Merchant",
     "printedTotal": "Printed total",
     "noReceipt": "No receipt is linked to this expense yet.",

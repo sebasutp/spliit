@@ -95,8 +95,8 @@ export function ReceiptItemRow({
   }
 
   return (
-    <li className="flex items-start justify-between gap-2 rounded-md p-2 hover:bg-accent/50">
-      <div className="min-w-0">
+    <li className="flex flex-col gap-2 rounded-md p-2 hover:bg-accent/50 sm:flex-row sm:items-start sm:justify-between sm:gap-2">
+      <div className="min-w-0 sm:flex-1">
         <div className="truncate font-medium">{item.name}</div>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
           <span className="tabular-nums">
@@ -118,52 +118,54 @@ export function ReceiptItemRow({
         </div>
       </div>
 
-      <div className="flex shrink-0 items-center gap-1">
+      <div className="flex shrink-0 items-center justify-between gap-1 sm:justify-end">
         <span className="mr-1 tabular-nums text-sm font-semibold">
           {formatCurrency(currency, item.amount, locale)}
         </span>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          title={t('item.assign')}
-          aria-label={t('item.assign')}
-          onClick={onAssign}
-        >
-          <UserPlus className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          title={t('item.edit')}
-          aria-label={t('item.edit')}
-          onClick={openEdit}
-        >
-          <Pencil className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          title={t('item.delete')}
-          aria-label={t('item.delete')}
-          onClick={() => setConfirmingDelete(true)}
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
-        {onRemovePortion ? (
+        <div className="flex items-center gap-1">
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 text-destructive"
-            title={t('item.removePortion')}
-            aria-label={t('item.removePortion')}
-            onClick={onRemovePortion}
+            className="h-8 w-8"
+            title={t('item.assign')}
+            aria-label={t('item.assign')}
+            onClick={onAssign}
           >
-            <X className="h-4 w-4" />
+            <UserPlus className="h-4 w-4" />
           </Button>
-        ) : null}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            title={t('item.edit')}
+            aria-label={t('item.edit')}
+            onClick={openEdit}
+          >
+            <Pencil className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            title={t('item.delete')}
+            aria-label={t('item.delete')}
+            onClick={() => setConfirmingDelete(true)}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+          {onRemovePortion ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-destructive"
+              title={t('item.removePortion')}
+              aria-label={t('item.removePortion')}
+              onClick={onRemovePortion}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       <Dialog open={editing} onOpenChange={setEditing}>

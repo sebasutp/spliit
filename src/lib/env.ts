@@ -92,6 +92,17 @@ const envSchema = z
       interpretEnvVarAsBool,
       z.boolean().default(false),
     ),
+    // Opt-in line-items calculator, default off. Enabling it implies the base
+    // receipt-extraction feature (see featureFlags.ts).
+    NEXT_PUBLIC_ENABLE_RECEIPT_ITEMS: z.preprocess(
+      interpretEnvVarAsBool,
+      z.boolean().default(false),
+    ),
+    // Runtime (non-public) counterpart, see ENABLE_EXPENSE_DOCUMENTS above.
+    ENABLE_RECEIPT_ITEMS: z.preprocess(
+      interpretEnvVarAsBool,
+      z.boolean().default(false),
+    ),
     NEXT_PUBLIC_ENABLE_CATEGORY_EXTRACT: z.preprocess(
       interpretEnvVarAsBool,
       z.boolean().default(false),
@@ -116,6 +127,13 @@ const envSchema = z
     OPENAI_MODEL_RECEIPT_EXTRACT: z.preprocess(
       interpretBlankEnvVarAsUndefined,
       z.string().trim().default('gpt-5-nano'),
+    ),
+    // Optional: when unset, the extraction action falls back to
+    // OPENAI_MODEL_RECEIPT_EXTRACT. Left without a default so the fallback
+    // stays in the action rather than being baked into the env snapshot.
+    OPENAI_MODEL_RECEIPT_ITEMS_EXTRACT: z.preprocess(
+      interpretBlankEnvVarAsUndefined,
+      z.string().trim().optional(),
     ),
     OPENAI_MODEL_CATEGORY_EXTRACT: z.preprocess(
       interpretBlankEnvVarAsUndefined,
@@ -154,6 +172,8 @@ const envSchema = z
       env.ENABLE_EXPENSE_DOCUMENTS || env.NEXT_PUBLIC_ENABLE_EXPENSE_DOCUMENTS
     const enableReceiptExtract =
       env.ENABLE_RECEIPT_EXTRACT || env.NEXT_PUBLIC_ENABLE_RECEIPT_EXTRACT
+    const enableReceiptItems =
+      env.ENABLE_RECEIPT_ITEMS || env.NEXT_PUBLIC_ENABLE_RECEIPT_ITEMS
     const enableCategoryExtract =
       env.ENABLE_CATEGORY_EXTRACT || env.NEXT_PUBLIC_ENABLE_CATEGORY_EXTRACT
     if (
@@ -178,6 +198,13 @@ const envSchema = z
         code: ZodIssueCode.custom,
         message:
           'If ENABLE_RECEIPT_EXTRACT or ENABLE_CATEGORY_EXTRACT is set, then OPENAI_API_KEY must be set too',
+      })
+    }
+    if (enableReceiptItems && !env.OPENAI_API_KEY) {
+      ctx.addIssue({
+        code: ZodIssueCode.custom,
+        message:
+          'If ENABLE_RECEIPT_ITEMS is set, then OPENAI_API_KEY must be set too',
       })
     }
     if (env.ANALYTICS_PROVIDER === 'plausible' && !env.PLAUSIBLE_DOMAIN) {

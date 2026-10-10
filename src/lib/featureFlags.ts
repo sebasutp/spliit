@@ -14,13 +14,20 @@ export async function getRuntimeFeatureFlags() {
   // env.NEXT_PUBLIC_* are read from the snapshot on purpose: Next.js inlines
   // them at build time, so the snapshot *is* the build-time value, which is the
   // right answer for a self-built image.
+  const enableReceiptItems =
+    parseFlag(process.env.ENABLE_RECEIPT_ITEMS) ||
+    env.NEXT_PUBLIC_ENABLE_RECEIPT_ITEMS
   return {
     enableExpenseDocuments:
       parseFlag(process.env.ENABLE_EXPENSE_DOCUMENTS) ||
       env.NEXT_PUBLIC_ENABLE_EXPENSE_DOCUMENTS,
+    // The line-items calculator builds on the base extraction feature, so
+    // enabling items implies extraction even when its own flag is unset.
     enableReceiptExtract:
       parseFlag(process.env.ENABLE_RECEIPT_EXTRACT) ||
-      env.NEXT_PUBLIC_ENABLE_RECEIPT_EXTRACT,
+      env.NEXT_PUBLIC_ENABLE_RECEIPT_EXTRACT ||
+      enableReceiptItems,
+    enableReceiptItems,
     enableCategoryExtract:
       parseFlag(process.env.ENABLE_CATEGORY_EXTRACT) ||
       env.NEXT_PUBLIC_ENABLE_CATEGORY_EXTRACT,

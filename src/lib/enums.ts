@@ -47,3 +47,21 @@ export const UserTier = {
   ADMIN: 'admin',
 } as const
 export type UserTier = (typeof UserTier)[keyof typeof UserTier]
+
+export const RECEIPT_STATUSES = ['PENDING', 'EXTRACTED', 'FAILED'] as const
+
+export const ReceiptStatus = {
+  PENDING: 'PENDING',
+  EXTRACTED: 'EXTRACTED',
+  FAILED: 'FAILED',
+} as const
+export type ReceiptStatus = (typeof ReceiptStatus)[keyof typeof ReceiptStatus]
+
+export const RECEIPT_PORTION_TARGETS = ['PARTICIPANT', 'SHARED'] as const
+
+export const ReceiptPortionTarget = {
+  PARTICIPANT: 'PARTICIPANT',
+  SHARED: 'SHARED',
+} as const
+export type ReceiptPortionTarget =
+  (typeof ReceiptPortionTarget)[keyof typeof ReceiptPortionTarget]

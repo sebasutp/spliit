@@ -20,6 +20,7 @@ model Group {
   expenses     Expense[]
   activities   Activity[]
   userGroups   UserGroup[]
+  receipts     Receipt[]
   createdAt    DateTime      @default(now())
 }
 
@@ -30,6 +31,8 @@ model Participant {
   groupId         String
   expensesPaidBy  Expense[]
   expensesPaidFor ExpensePaidFor[]
+  receiptPortions ReceiptItemPortion[]
+  receiptOptOuts  ReceiptOptOut[]
 }
 
 model Category {
@@ -59,6 +62,7 @@ model Expense {
   createdAt        DateTime          @default(now())
   documents        ExpenseDocument[]
   notes            String?
+  receipt          Receipt?
 
   recurrenceRule         String?               @default("NONE")
   recurringExpenseLink   RecurringExpenseLink?
@@ -169,4 +173,74 @@ model UserGroup {
   @@id([userId, groupId])
   @@index([userId])
   @@index([groupId])
+}
+
+model Receipt {
+  id            String        @id
+  group         Group         @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  groupId       String
+  imageUrl      String
+  imageWidth    Int?
+  imageHeight   Int?
+  status        String        @default("PENDING")
+  rawExtraction String?
+  provider      String?
+  model         String?
+  merchant      String?
+  receiptDate   DateTime?
+  currencyCode  String?
+  total         Int?
+  expense       Expense?      @relation(fields: [expenseId], references: [id], onDelete: SetNull)
+  expenseId     String?       @unique
+  items         ReceiptItem[]
+  optOuts       ReceiptOptOut[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@unique([groupId, imageUrl])
+}
+
+model ReceiptItem {
+  id            String               @id
+  receipt       Receipt              @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  receiptId     String
+  name          String
+  quantityMilli Int                  @default(1000)
+  unitPrice     Int?
+  amount        Int
+  isShared      Boolean              @default(false)
+  isAdjustment  Boolean              @default(false)
+  position      Int                  @default(0)
+  portions      ReceiptItemPortion[]
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  @@index([receiptId, position])
+}
+
+model ReceiptItemPortion {
+  id            String        @id @default(cuid())
+  item          ReceiptItem   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  itemId        String
+  target        String
+  participant   Participant?  @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  participantId String?
+  quantityMilli Int
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([itemId])
+  @@index([participantId])
+}
+
+model ReceiptOptOut {
+  id            String      @id @default(cuid())
+  receipt       Receipt     @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  receiptId     String
+  participant   Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  participantId String
+  createdAt     DateTime    @default(now())
+
+  @@unique([receiptId, participantId])
+  @@index([participantId])
 }

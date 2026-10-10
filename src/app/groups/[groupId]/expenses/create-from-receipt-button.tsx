@@ -4,6 +4,7 @@ import { CategoryIcon } from '@/app/groups/[groupId]/expenses/category-icon'
 import {
   ReceiptExtractedInfo,
   extractExpenseInformationFromImage,
+  extractReceiptItemsForImage,
 } from '@/app/groups/[groupId]/expenses/create-from-receipt-button-actions'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -33,6 +34,7 @@ import {
   isPublicUploadUrlConfigured,
 } from '@/lib/public-upload-url'
 import {
+  amountAsDecimal,
   formatCurrency,
   formatDate,
   formatFileSize,
@@ -49,9 +51,12 @@ import { useCurrentGroup } from '../current-group-context'
 
 export function CreateFromReceiptButton({
   s3PublicUrl,
+  enableReceiptItems = false,
 }: {
   /** Public base URL for uploaded documents, resolved on the server. */
   s3PublicUrl?: string | null
+  /** When true, extraction reads line items and records a receipt to link. */
+  enableReceiptItems?: boolean
 }) {
   const t = useTranslations('CreateFromReceipt')
   const isDesktop = useMediaQuery('(min-width: 640px)')
@@ -81,15 +86,20 @@ export function CreateFromReceiptButton({
       }
       description={<>{t('Dialog.description')}</>}
     >
-      <ReceiptDialogContent s3PublicUrl={s3PublicUrl} />
+      <ReceiptDialogContent
+        s3PublicUrl={s3PublicUrl}
+        enableReceiptItems={enableReceiptItems}
+      />
     </DialogOrDrawer>
   )
 }
 
 function ReceiptDialogContent({
   s3PublicUrl,
+  enableReceiptItems = false,
 }: {
   s3PublicUrl?: string | null
+  enableReceiptItems?: boolean
 }) {
   const { groupId, group } = useCurrentGroup()
   const sendEvent = useAnalytics()
@@ -104,7 +114,12 @@ function ReceiptDialogContent({
   const router = useRouter()
   const [receiptInfo, setReceiptInfo] = useState<
     | null
-    | (ReceiptExtractedInfo & { url: string; width?: number; height?: number })
+    | (ReceiptExtractedInfo & {
+        url: string
+        width?: number
+        height?: number
+        receiptId?: string
+      })
   >(null)
 
   const handleFileChange = async (file: File) => {
@@ -132,11 +147,55 @@ function ReceiptDialogContent({
         console.log('Uploading image…')
         let { url: uploadUrl, key } = await uploadToS3(compressed)
         const url = getPublicUploadUrl(s3PublicUrl, key, uploadUrl)
-        console.log('Extracting information from receipt…')
-        const { amount, categoryId, date, title } =
-          await extractExpenseInformationFromImage(url)
         const { width, height } = await getImageData(compressed)
-        setReceiptInfo({ amount, categoryId, date, title, url, width, height })
+        console.log('Extracting information from receipt…')
+        if (enableReceiptItems && group) {
+          const result = await extractReceiptItemsForImage({
+            groupId,
+            imageUrl: url,
+            imageWidth: width,
+            imageHeight: height,
+          })
+          if (result.status === 'FAILED') {
+            toast({
+              title: t('ErrorToast.title'),
+              description: t('ErrorToast.description'),
+              variant: 'destructive',
+              action: (
+                <ToastAction
+                  altText={t('ErrorToast.retry')}
+                  onClick={() => upload()}
+                >
+                  {t('ErrorToast.retry')}
+                </ToastAction>
+              ),
+            })
+            return
+          }
+          const currency = getCurrencyFromGroup(group)
+          setReceiptInfo({
+            amount: amountAsDecimal(result.itemsTotal, currency),
+            categoryId: result.categoryId,
+            date: result.date,
+            title: result.merchant,
+            url,
+            width,
+            height,
+            receiptId: result.receiptId,
+          })
+        } else {
+          const { amount, categoryId, date, title } =
+            await extractExpenseInformationFromImage(url)
+          setReceiptInfo({
+            amount,
+            categoryId,
+            date,
+            title,
+            url,
+            width,
+            height,
+          })
+        }
       } catch (err) {
         console.error(err)
         toast({
@@ -275,6 +334,9 @@ function ReceiptDialogContent({
               { event: 'expense: create from receipt', props: {} },
               `/groups/${groupId}/expenses`,
             )
+            const receiptIdParam = receiptInfo.receiptId
+              ? `&receiptId=${receiptInfo.receiptId}`
+              : ''
             router.push(
               `/groups/${group.id}/expenses/create?amount=${
                 receiptInfo.amount
@@ -284,7 +346,7 @@ function ReceiptDialogContent({
                 receiptInfo.title ?? '',
               )}&imageUrl=${encodeURIComponent(receiptInfo.url)}&imageWidth=${
                 receiptInfo.width
-              }&imageHeight=${receiptInfo.height}`,
+              }&imageHeight=${receiptInfo.height}${receiptIdParam}`,
             )
           }}
         >

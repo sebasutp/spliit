@@ -471,6 +471,7 @@ export async function getExpense(groupId: string, expenseId: string) {
       category: true,
       documents: true,
       recurringExpenseLink: true,
+      receipt: { select: { id: true } },
     },
   })
 }

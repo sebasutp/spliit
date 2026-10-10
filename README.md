@@ -252,45 +252,97 @@ As with AWS, enable public access on the bucket and allow `PUT` from your app's 
 
 ### Create expense from receipt
 
-You can offer users to create expense by uploading a receipt. This feature relies on a [vision-capable OpenAI model](https://platform.openai.com/docs/guides/vision) and a public S3 storage endpoint.
+You can offer users to create expense by uploading a receipt. This feature relies on a vision-capable AI model (any [OpenAI-compatible endpoint](#ai-provider), including [OpenAI's vision models](https://platform.openai.com/docs/guides/vision)) and a public S3 storage endpoint.
 
 To enable the feature:
 
 - You must enable expense documents feature as well (see section above). That might change in the future, but for now we need to store images to make receipt scanning work.
-- Subscribe to OpenAI API and get access to a vision-capable model (you might need to buy credits in advance).
+- Configure an AI provider (see [AI provider](#ai-provider) below) with a vision-capable model. The default is the OpenAI API, but any OpenAI-compatible endpoint works.
 - Update your environment variables with appropriate values:
 
 ```.env
 ENABLE_RECEIPT_EXTRACT=true
-OPENAI_API_KEY=XXXXXXXXXXXXXXXXXXXXXXXXXXXX
+AI_API_KEY=XXXXXXXXXXXXXXXXXXXXXXXXXXXX
 ```
 
-The model defaults to `gpt-5-nano` and can be changed with the optional `OPENAI_MODEL_RECEIPT_EXTRACT` variable — a larger model reads poor-quality photos more reliably, at a higher price per scan.
+The model defaults to `gpt-5-nano` and can be changed with the optional `AI_MODEL_RECEIPT_EXTRACT` variable — a larger model reads poor-quality photos more reliably, at a higher price per scan.
+
+### Receipt line items
+
+The items screen is an optional calculator that breaks a scanned receipt down into individual lines. It shows each line's quantity and splits it between participants or a shared pool, then computes provisional per-person totals. The expense itself is untouched until the user clicks **Apply to expense**, which writes those totals as a `BY_AMOUNT` split.
+
+Enable it with:
+
+```.env
+ENABLE_RECEIPT_ITEMS=true
+NEXT_PUBLIC_ENABLE_RECEIPT_ITEMS=true
+```
+
+`ENABLE_RECEIPT_ITEMS` implies `ENABLE_RECEIPT_EXTRACT` and needs an AI provider (see [AI provider](#ai-provider)); S3/expense-documents are still required to host the image. The lines are read with a vision model, defaulting to `AI_MODEL_RECEIPT_EXTRACT` and overridable with the optional `AI_MODEL_RECEIPT_ITEMS_EXTRACT` variable.
+
+The parse is cached per `(groupId, imageUrl)`, so re-uploading the same image reuses the items instead of calling the model again. Items left unassigned are split evenly among the participants who have not opted out, while whole-bill charges — tax, tip, service, cover and delivery — are paid by everyone.
 
 ### Deduce category from title
 
-You can offer users to automatically deduce the expense category from the title. Since this feature relies on a OpenAI subscription, follow the signup instructions above and configure the following environment variables:
+You can offer users to automatically deduce the expense category from the title. Configure an AI provider (see [AI provider](#ai-provider)) and the following environment variables:
 
 ```.env
 ENABLE_CATEGORY_EXTRACT=true
-OPENAI_API_KEY=XXXXXXXXXXXXXXXXXXXXXXXXXXXX
+AI_API_KEY=XXXXXXXXXXXXXXXXXXXXXXXXXXXX
 ```
 
-The model defaults to `gpt-5-nano` and can be changed with the optional `OPENAI_MODEL_CATEGORY_EXTRACT` variable.
+The model defaults to `gpt-5-nano` and can be changed with the optional `AI_MODEL_CATEGORY_EXTRACT` variable.
 
-### Using another OpenAI-compatible provider
+### AI provider
 
-Both AI features above talk to the official OpenAI API by default. Set the optional `OPENAI_BASE_URL` variable to point them at a self-hosted or alternative provider instead:
+The receipt, line-items and category features all send their request to the same
+OpenAI-compatible Chat Completions endpoint. It defaults to the official OpenAI
+API, but any provider that speaks that protocol works — Google Gemini,
+OpenRouter, Groq, Ollama, LM Studio, a self-hosted gateway, …
+
+Configure it with the provider-neutral `AI_*` variables:
+
+| Variable                          | Purpose                                                                 |
+| --------------------------------- | ----------------------------------------------------------------------- |
+| `AI_API_KEY`                      | API key sent as `Authorization: Bearer`. Required once a feature is on. |
+| `AI_BASE_URL`                     | Endpoint base URL. Unset means the official OpenAI API.                 |
+| `AI_MODEL_RECEIPT_EXTRACT`        | Vision model for receipt scanning. Defaults to `gpt-5-nano`.            |
+| `AI_MODEL_RECEIPT_ITEMS_EXTRACT`  | Vision model for the line-items screen. Defaults to the one above.      |
+| `AI_MODEL_CATEGORY_EXTRACT`       | Text model for the title → category suggestion. Defaults to `gpt-5-nano`. |
+
+The historical `OPENAI_API_KEY`, `OPENAI_BASE_URL` and `OPENAI_MODEL_*` names
+still work; when both spellings are set, `AI_*` wins.
+
+#### Google Gemini
+
+Gemini exposes an OpenAI-compatible endpoint, so no Gemini-specific client is
+needed:
 
 ```.env
-OPENAI_BASE_URL=http://localhost:11434/v1
-OPENAI_MODEL_RECEIPT_EXTRACT=name-of-a-vision-model
-OPENAI_MODEL_CATEGORY_EXTRACT=name-of-a-text-model
+AI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai/
+AI_API_KEY=<your Google AI Studio API key>
+AI_MODEL_RECEIPT_EXTRACT=gemini-2.5-flash
+AI_MODEL_RECEIPT_ITEMS_EXTRACT=gemini-2.5-flash
+AI_MODEL_CATEGORY_EXTRACT=gemini-2.5-flash
 ```
 
-Whichever provider you choose has to support the `json_schema` response format ([structured outputs](https://platform.openai.com/docs/guides/structured-outputs)), and the receipt feature additionally needs image input. If a response does not match the expected schema, the app reports that nothing could be extracted rather than filling the form with guesses.
+#### Local / self-hosted
 
-If your environment file was created on Windows, make sure it uses **LF line endings**. A trailing carriage return makes `OPENAI_API_KEY` fail authentication and silently switches feature flags off.
+```.env
+AI_BASE_URL=http://localhost:11434/v1
+AI_API_KEY=not-needed
+```
+
+Local servers usually ignore the key, but the OpenAI SDK refuses to start
+without one, so set any non-empty placeholder.
+
+Whichever provider you choose has to support the `json_schema` response format ([structured outputs](https://platform.openai.com/docs/guides/structured-outputs)), and the receipt features additionally need image input. If a response does not match the expected schema, the app reports that nothing could be extracted rather than filling the form with guesses.
+
+The prompt sent to the model lives in `src/lib/ai/prompts.ts` and the expected
+response shape in `src/lib/ai/schemas.ts`; the client is configured in
+`src/lib/ai/client.ts`.
+
+If your environment file was created on Windows, make sure it uses **LF line endings**. A trailing carriage return makes the API key fail authentication and silently switches feature flags off.
 
 ### Analytics
 

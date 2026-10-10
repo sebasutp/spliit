@@ -157,3 +157,19 @@ export function distributeAmount(amount: number, count: number): number[] {
     0,
   )
 }
+
+/**
+ * Splits `amount` (minor units) over integer `weights` proportionally to the
+ * weights, using largest-remainder apportionment. Returns one amount per weight,
+ * in the same order; an empty weights array returns an empty array.
+ *
+ * The returned amounts add up to exactly `amount` only when the weights sum to a
+ * non-zero total. When every weight is zero (or the array is empty) each amount
+ * is 0 regardless of `amount`, so callers must not pass an all-zero weight list
+ * when `amount` is non-zero.
+ */
+export function weightedApportion(amount: number, weights: number[]): number[] {
+  if (weights.length === 0) return []
+  const totalWeights = weights.reduce((sum, weight) => sum + weight, 0)
+  return apportion(amount, weights, totalWeights, 0)
+}

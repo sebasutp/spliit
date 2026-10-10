@@ -473,10 +473,11 @@ export function reconcileDraft(draft: ReceiptDraft): {
   }
 }
 
-/** Apply is blocked only when everyone opted out while an unassigned pool remains. */
+/** Apply is blocked when everyone opted out while an unassigned pool remains, or when the receipt has no items. */
 export function canApplyDraft(
   draft: ReceiptDraft,
   participantIds: string[],
 ): boolean {
-  return !computeDraftSplit(draft, participantIds).allOptedOut
+  const split = computeDraftSplit(draft, participantIds)
+  return !split.allOptedOut && split.itemsTotal !== 0
 }

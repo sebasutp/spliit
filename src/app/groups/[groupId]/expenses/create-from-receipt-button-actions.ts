@@ -9,6 +9,7 @@ import {
   RECEIPT_ITEMS_JSON_SCHEMA,
 } from '@/lib/receipt-extraction'
 import {
+  claimReceiptForExtraction,
   completeReceipt,
   createPendingReceipt,
   failReceipt,
@@ -208,6 +209,15 @@ export async function extractReceiptItemsForImage(input: {
       imageWidth: input.imageWidth,
       imageHeight: input.imageHeight,
     }))
+
+  // One AI call per image under concurrency: only the caller that wins the
+  // atomic claim may run (and pay for) the extraction. The claim is released
+  // by `completeReceipt`/`failReceipt`; a crash is recovered after the stale
+  // timeout.
+  const claimed = await claimReceiptForExtraction(receipt.id)
+  if (!claimed) {
+    throw new Error('Receipt extraction is already in progress.')
+  }
 
   const model =
     env.OPENAI_MODEL_RECEIPT_ITEMS_EXTRACT ?? env.OPENAI_MODEL_RECEIPT_EXTRACT

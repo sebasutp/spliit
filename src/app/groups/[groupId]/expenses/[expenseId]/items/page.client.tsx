@@ -115,21 +115,33 @@ export default function ReceiptItemsPageClient({ groupId, expenseId }: Props) {
 
   const initialisedRef = useRef(false)
   const itemizeTrackedRef = useRef(false)
+  // Mirror of the draft state for mutation handlers: reading it avoids stale
+  // closures when two quick actions run before React re-renders.
+  const draftRef = useRef<ReceiptDraft | null>(null)
   const pendingUpdatesRef = useRef(
     new Map<
       string,
       { patch: ItemEditPatch; timer: ReturnType<typeof setTimeout> }
     >(),
   )
+  // Debounced saves already sent to the server, so Apply can wait for them
+  // before the server recomputes the split.
+  const inFlightUpdatesRef = useRef(new Set<Promise<unknown>>())
+
+  // Keeps the ref and the state in lockstep; every draft write goes through it.
+  const updateDraft = useCallback((next: ReceiptDraft | null) => {
+    draftRef.current = next
+    setDraft(next)
+  }, [])
 
   // Seed the editable draft from the server exactly once, so a background
   // refetch can never clobber in-progress edits.
   useEffect(() => {
     if (!initialisedRef.current && receiptData) {
       initialisedRef.current = true
-      setDraft(toDraft(receiptData.receipt))
+      updateDraft(toDraft(receiptData.receipt))
     }
-  }, [receiptData])
+  }, [receiptData, updateDraft])
 
   // Report that a loaded receipt was opened in the items screen, once per
   // mount. Guarded by a ref because a background refetch hands back a new
@@ -152,8 +164,8 @@ export default function ReceiptItemsPageClient({ groupId, expenseId }: Props) {
   const resync = useCallback(async () => {
     const data = await utils.groups.receipts.get.fetch({ groupId, expenseId })
     initialisedRef.current = true
-    setDraft(toDraft(data.receipt))
-  }, [utils, groupId, expenseId])
+    updateDraft(toDraft(data.receipt))
+  }, [utils, groupId, expenseId, updateDraft])
 
   const handleMutationSuccess = useCallback(() => {
     void utils.groups.receipts.get.invalidate()
@@ -263,7 +275,14 @@ export default function ReceiptItemsPageClient({ groupId, expenseId }: Props) {
     name: participant.name,
   }))
 
-  const applyReceipt = () => {
+  const applyReceipt = async () => {
+    try {
+      await flushPendingUpdates()
+    } catch {
+      // A failed save already toasted and resynced the draft; applying now
+      // would silently drop the user's latest edits.
+      return
+    }
     applyMutation.mutate({ groupId, receiptId, expenseId })
   }
 
@@ -273,7 +292,7 @@ export default function ReceiptItemsPageClient({ groupId, expenseId }: Props) {
       setConfirmingApply(true)
       return
     }
-    applyReceipt()
+    void applyReceipt()
   }
 
   const summaryFor = (entries: SectionEntry[]) => {
@@ -298,36 +317,71 @@ export default function ReceiptItemsPageClient({ groupId, expenseId }: Props) {
     setPortionsMutation.mutate({ groupId, receiptId, itemId, portions })
   }
 
+  // Sends an item patch to the server immediately and tracks the promise so
+  // Apply can await every queued write.
+  const saveItemUpdate = (itemId: string, patch: ItemEditPatch) => {
+    const promise = updateItemMutation.mutateAsync({
+      groupId,
+      receiptId,
+      itemId,
+      ...patch,
+    })
+    inFlightUpdatesRef.current.add(promise)
+    // The rejection is surfaced by the mutation's onError; this copy only
+    // exists to keep the tracked promise from rejecting unobserved.
+    void promise
+      .catch(() => undefined)
+      .finally(() => inFlightUpdatesRef.current.delete(promise))
+    return promise
+  }
+
+  // Clears every debounce timer synchronously, then awaits all queued and
+  // in-flight saves so the split Apply recomputes server-side includes them.
+  const flushPendingUpdates = async () => {
+    const pending = pendingUpdatesRef.current
+    const saves: Promise<unknown>[] = []
+    pending.forEach((entry, itemId) => {
+      clearTimeout(entry.timer)
+      if (Object.keys(entry.patch).length > 0) {
+        saves.push(saveItemUpdate(itemId, entry.patch))
+      }
+    })
+    pending.clear()
+    await Promise.all([...saves, ...inFlightUpdatesRef.current])
+  }
+
   const handleAssign = (itemId: string, portions: DraftPortion[]) => {
-    setDraft((current) =>
-      current ? draftSetItemPortions(current, itemId, portions) : current,
-    )
+    const current = draftRef.current
+    if (!current) return
+    updateDraft(draftSetItemPortions(current, itemId, portions))
     persistPortions(itemId, portions)
   }
 
   const handleRemovePortion = (itemId: string, index: number) => {
-    const next = draftRemovePortion(draft, itemId, index)
-    setDraft(next)
+    const current = draftRef.current
+    if (!current) return
+    const next = draftRemovePortion(current, itemId, index)
+    updateDraft(next)
     const item = next.items.find((candidate) => candidate.id === itemId)
     if (item) persistPortions(itemId, item.portions)
   }
 
   const handleDeleteItem = (itemId: string) => {
-    setDraft((current) =>
-      current ? draftDeleteItem(current, itemId) : current,
-    )
+    const current = draftRef.current
+    if (current) updateDraft(draftDeleteItem(current, itemId))
     deleteItemMutation.mutate({ groupId, receiptId, itemId })
   }
 
   const handleToggleOptOut = (participantId: string, optedOut: boolean) => {
-    setDraft(draftSetOptOut(draft, participantId, optedOut))
+    const current = draftRef.current
+    if (!current) return
+    updateDraft(draftSetOptOut(current, participantId, optedOut))
     setOptOutMutation.mutate({ groupId, receiptId, participantId, optedOut })
   }
 
   const handleUpdateItem = (itemId: string, patch: ItemEditPatch) => {
-    setDraft((current) =>
-      current ? draftUpdateItem(current, itemId, patch) : current,
-    )
+    const current = draftRef.current
+    if (current) updateDraft(draftUpdateItem(current, itemId, patch))
     const pending = pendingUpdatesRef.current
     const existing = pending.get(itemId)
     if (existing) clearTimeout(existing.timer)
@@ -335,7 +389,7 @@ export default function ReceiptItemsPageClient({ groupId, expenseId }: Props) {
     const timer = setTimeout(() => {
       pending.delete(itemId)
       if (Object.keys(merged).length === 0) return
-      updateItemMutation.mutate({ groupId, receiptId, itemId, ...merged })
+      void saveItemUpdate(itemId, merged)
     }, UPDATE_DEBOUNCE_MS)
     pending.set(itemId, { patch: merged, timer })
   }
@@ -470,6 +524,7 @@ export default function ReceiptItemsPageClient({ groupId, expenseId }: Props) {
         currency={currency}
         reconciliation={reconciliation}
         canApply={canApply}
+        empty={split.itemsTotal === 0}
         divergent={divergent}
         optedOutParticipantIds={draft.optedOutParticipantIds}
         onOptOutChange={handleToggleOptOut}
@@ -502,7 +557,7 @@ export default function ReceiptItemsPageClient({ groupId, expenseId }: Props) {
               <Button
                 onClick={() => {
                   setConfirmingApply(false)
-                  applyReceipt()
+                  void applyReceipt()
                 }}
               >
                 {t('applyConfirm.confirm')}

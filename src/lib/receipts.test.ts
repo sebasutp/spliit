@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { randomId } from '@/lib/random'
 import type { NormalizedReceipt } from '@/lib/receipt-extraction'
 import {
+  claimReceiptForExtraction,
   completeReceipt,
   createPendingReceipt,
   failReceipt,
@@ -247,5 +248,92 @@ describe('receipts data access', () => {
     expect(failed?.rawExtraction).toBe('malformed')
     expect(failed?.provider).toBe('openai')
     expect(failed?.model).toBe('gpt-4o')
+  })
+
+  describe('claimReceiptForExtraction', () => {
+    it('claims a pending receipt once and refuses a second concurrent claim', async () => {
+      const receipt = await createPendingReceipt({
+        groupId,
+        imageUrl: `https://example.com/${randomId()}.jpg`,
+      })
+
+      await expect(claimReceiptForExtraction(receipt.id)).resolves.toBe(true)
+      expect((await getReceiptById(receipt.id))?.status).toBe(
+        ReceiptStatus.EXTRACTING,
+      )
+
+      // The second uploader loses the race and must not call the model.
+      await expect(claimReceiptForExtraction(receipt.id)).resolves.toBe(false)
+    })
+
+    it('does not claim an extracted or a freshly extracting receipt', async () => {
+      const extracted = await createPendingReceipt({
+        groupId,
+        imageUrl: `https://example.com/${randomId()}.jpg`,
+      })
+      await completeReceipt(extracted.id, {
+        rawExtraction: null,
+        provider: null,
+        model: null,
+        normalized: {
+          merchant: 'Café',
+          date: null,
+          currencyCode: 'EUR',
+          total: 1000,
+          categoryId: null,
+          itemsTotal: 1000,
+          items: [],
+        },
+      })
+      await expect(claimReceiptForExtraction(extracted.id)).resolves.toBe(false)
+      expect((await getReceiptById(extracted.id))?.status).toBe(
+        ReceiptStatus.EXTRACTED,
+      )
+
+      const extracting = await createPendingReceipt({
+        groupId,
+        imageUrl: `https://example.com/${randomId()}.jpg`,
+      })
+      await expect(claimReceiptForExtraction(extracting.id)).resolves.toBe(true)
+      await expect(claimReceiptForExtraction(extracting.id)).resolves.toBe(
+        false,
+      )
+      expect((await getReceiptById(extracting.id))?.status).toBe(
+        ReceiptStatus.EXTRACTING,
+      )
+    })
+
+    it('claims a failed receipt again', async () => {
+      const receipt = await createPendingReceipt({
+        groupId,
+        imageUrl: `https://example.com/${randomId()}.jpg`,
+      })
+      await failReceipt(receipt.id, {
+        rawExtraction: 'malformed',
+        provider: 'openai',
+        model: 'gpt-4o',
+      })
+
+      await expect(claimReceiptForExtraction(receipt.id)).resolves.toBe(true)
+      expect((await getReceiptById(receipt.id))?.status).toBe(
+        ReceiptStatus.EXTRACTING,
+      )
+    })
+
+    it('recovers an extracting receipt whose claim went stale', async () => {
+      const receipt = await createPendingReceipt({
+        groupId,
+        imageUrl: `https://example.com/${randomId()}.jpg`,
+      })
+      await expect(claimReceiptForExtraction(receipt.id)).resolves.toBe(true)
+
+      // Simulate a crash that left the claim behind more than five minutes ago.
+      await prisma.receipt.update({
+        where: { id: receipt.id },
+        data: { updatedAt: new Date(Date.now() - 10 * 60 * 1000) },
+      })
+
+      await expect(claimReceiptForExtraction(receipt.id)).resolves.toBe(true)
+    })
   })
 })

@@ -48,10 +48,16 @@ export const UserTier = {
 } as const
 export type UserTier = (typeof UserTier)[keyof typeof UserTier]
 
-export const RECEIPT_STATUSES = ['PENDING', 'EXTRACTED', 'FAILED'] as const
+export const RECEIPT_STATUSES = [
+  'PENDING',
+  'EXTRACTING',
+  'EXTRACTED',
+  'FAILED',
+] as const
 
 export const ReceiptStatus = {
   PENDING: 'PENDING',
+  EXTRACTING: 'EXTRACTING',
   EXTRACTED: 'EXTRACTED',
   FAILED: 'FAILED',
 } as const

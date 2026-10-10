@@ -116,6 +116,37 @@ export async function createPendingReceipt(input: {
   }
 }
 
+/** How long an `EXTRACTING` claim is trusted before another caller may take it. */
+const EXTRACTION_STALE_MS = 5 * 60 * 1000
+
+/**
+ * Claims the right to run the (paid, slow) extraction for a receipt by moving
+ * it to `EXTRACTING` atomically. Claimable when the receipt is `PENDING` or
+ * `FAILED`, or when a previous extraction crashed and left it `EXTRACTING` for
+ * longer than `EXTRACTION_STALE_MS`. Returns `true` iff this caller won the
+ * claim, so concurrent uploads of the same image call the model only once.
+ */
+export async function claimReceiptForExtraction(
+  receiptId: string,
+): Promise<boolean> {
+  const staleBefore = new Date(Date.now() - EXTRACTION_STALE_MS)
+  const result = await prisma.receipt.updateMany({
+    where: {
+      id: receiptId,
+      OR: [
+        { status: { in: [ReceiptStatus.PENDING, ReceiptStatus.FAILED] } },
+        {
+          status: ReceiptStatus.EXTRACTING,
+          updatedAt: { lt: staleBefore },
+        },
+      ],
+    },
+    data: { status: ReceiptStatus.EXTRACTING },
+  })
+
+  return result.count === 1
+}
+
 /**
  * Stores a successful extraction: flips the receipt to EXTRACTED, records the
  * raw/provider/model metadata and normalized header, then replaces the line

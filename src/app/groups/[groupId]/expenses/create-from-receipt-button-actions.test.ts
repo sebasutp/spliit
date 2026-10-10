@@ -9,6 +9,7 @@ var mockGetReceiptByImage = jest.fn()
 var mockCreatePendingReceipt = jest.fn()
 var mockCompleteReceipt = jest.fn()
 var mockFailReceipt = jest.fn()
+var mockClaimReceiptForExtraction = jest.fn()
 
 jest.mock('openai', () => ({
   __esModule: true,
@@ -49,6 +50,8 @@ jest.mock('../../../../lib/receipts', () => ({
     mockCreatePendingReceipt(...args),
   completeReceipt: (...args: unknown[]) => mockCompleteReceipt(...args),
   failReceipt: (...args: unknown[]) => mockFailReceipt(...args),
+  claimReceiptForExtraction: (...args: unknown[]) =>
+    mockClaimReceiptForExtraction(...args),
 }))
 
 import { env } from '../../../../lib/env'
@@ -194,6 +197,7 @@ describe('extractReceiptItemsForImage', () => {
         items: [],
       }))
     mockFailReceipt.mockReset().mockResolvedValue(undefined)
+    mockClaimReceiptForExtraction.mockReset().mockResolvedValue(true)
     env.OPENAI_MODEL_RECEIPT_ITEMS_EXTRACT = undefined
   })
 
@@ -252,6 +256,33 @@ describe('extractReceiptItemsForImage', () => {
         position: 1,
       },
     ])
+  })
+
+  it('claims the extraction before calling the model', async () => {
+    respondWith(JSON.stringify(VALID_ITEMS_EXTRACTION))
+
+    await extractReceiptItemsForImage({ groupId: 'group-1', imageUrl: IMAGE })
+
+    expect(mockClaimReceiptForExtraction).toHaveBeenCalledWith(
+      PENDING_RECEIPT_ID,
+    )
+    expect(
+      mockClaimReceiptForExtraction.mock.invocationCallOrder[0],
+    ).toBeLessThan(mockCreate.mock.invocationCallOrder[0])
+    expect(mockCreate).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses to call the model when another extraction holds the claim', async () => {
+    mockClaimReceiptForExtraction.mockResolvedValue(false)
+    respondWith(JSON.stringify(VALID_ITEMS_EXTRACTION))
+
+    await expect(
+      extractReceiptItemsForImage({ groupId: 'group-1', imageUrl: IMAGE }),
+    ).rejects.toThrow('Receipt extraction is already in progress.')
+
+    expect(mockCreate).not.toHaveBeenCalled()
+    expect(mockCompleteReceipt).not.toHaveBeenCalled()
+    expect(mockFailReceipt).not.toHaveBeenCalled()
   })
 
   it('reuses an existing EXTRACTED receipt without calling the model', async () => {

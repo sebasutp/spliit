@@ -318,6 +318,7 @@
     "printedTotal": "Printed total",
     "loading": "Loading receipt…",
     "noReceipt": "No receipt is linked to this expense yet.",
+    "empty": "No items yet. Add one to start splitting.",
     "saveError": {
       "title": "Couldn’t save your change",
       "description": "We reloaded the receipt so you can try again."

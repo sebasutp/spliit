@@ -535,4 +535,13 @@ describe('canApplyDraft', () => {
     const assigned = assignItem(allOut, 'i', 'PARTICIPANT', 'p1')
     expect(canApplyDraft(assigned, ['p1', 'p2'])).toBe(true)
   })
+
+  it('blocks when the items total is zero', () => {
+    expect(canApplyDraft(makeDraft(), ['p1', 'p2'])).toBe(false)
+
+    const zeroAmount = makeDraft({
+      items: [makeItem({ id: 'i', amount: 0 })],
+    })
+    expect(canApplyDraft(zeroAmount, ['p1', 'p2'])).toBe(false)
+  })
 })

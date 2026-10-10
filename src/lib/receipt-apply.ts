@@ -5,7 +5,7 @@ import {
   getReceiptById,
   linkReceiptToExpense,
 } from '@/lib/receipts'
-import type { ExpenseFormValues } from '@/lib/schemas'
+import { expenseFormSchema, type ExpenseFormValues } from '@/lib/schemas'
 
 export type ApplyReceiptInput = {
   groupId: string
@@ -50,6 +50,15 @@ export async function applyReceiptToExpense(
     throw new Error('The receipt has no items to apply.')
   }
 
+  // A negative adjustment can push a participant's provisional total below
+  // zero; filtering those rows out would break the `BY_AMOUNT` invariant, so
+  // refuse to apply until the items are fixed.
+  if (split.participants.some((participant) => participant.total < 0)) {
+    throw new Error(
+      'Some participants have a negative share; adjust the items before applying.',
+    )
+  }
+
   // The provisional totals sum exactly to the items total, so filtering out the
   // zero shares keeps the `BY_AMOUNT` invariant (Σ shares === amount).
   const paidFor = split.participants
@@ -81,6 +90,14 @@ export async function applyReceiptToExpense(
     originalAmount: undefined,
     originalCurrency: undefined,
     conversionRate: undefined,
+  }
+
+  // Defence in depth: never write a row the expense schema rejects (e.g. shares
+  // that do not sum exactly to the amount, or a zero share).
+  if (!expenseFormSchema.safeParse(formValues).success) {
+    throw new Error(
+      'The receipt split is invalid; adjust the items before applying.',
+    )
   }
 
   await updateExpense(

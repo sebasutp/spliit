@@ -22,8 +22,10 @@ type Props = {
   participants: ReceiptFooterParticipant[]
   currency: Currency
   reconciliation: ReceiptFooterReconciliation
-  /** Whether Apply is allowed; false only when everyone opted out. */
+  /** Whether Apply is allowed; false when everyone opted out or no items exist. */
   canApply: boolean
+  /** When true the receipt has no items, so Apply is replaced by an empty hint. */
+  empty?: boolean
   /** When true, the linked expense no longer matches the items total. */
   divergent?: boolean
   optedOutParticipantIds: string[]
@@ -43,6 +45,7 @@ export function ReceiptFooter({
   currency,
   reconciliation,
   canApply,
+  empty = false,
   divergent = false,
   optedOutParticipantIds,
   onApply,
@@ -144,18 +147,29 @@ export function ReceiptFooter({
           </div>
 
           <div className="flex flex-col items-end gap-1">
-            <Button
-              onClick={onApply}
-              disabled={!canApply || applying}
-              data-testid="apply-button"
-            >
-              {t('footer.apply')}
-            </Button>
-            {!canApply ? (
-              <p className="text-xs text-destructive">
-                {t('footer.allOptedOut')}
+            {empty ? (
+              <p
+                data-testid="empty-note"
+                className="text-xs text-muted-foreground"
+              >
+                {t('empty')}
               </p>
-            ) : null}
+            ) : (
+              <>
+                <Button
+                  onClick={onApply}
+                  disabled={!canApply || applying}
+                  data-testid="apply-button"
+                >
+                  {t('footer.apply')}
+                </Button>
+                {!canApply ? (
+                  <p className="text-xs text-destructive">
+                    {t('footer.allOptedOut')}
+                  </p>
+                ) : null}
+              </>
+            )}
           </div>
         </div>
       </div>

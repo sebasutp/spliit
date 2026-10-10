@@ -59,6 +59,7 @@ describe('applyReceiptToExpense', () => {
       quantityMilli: number
       amount: number
       isShared: boolean
+      isAdjustment?: boolean
       portions?: StoredPortion[]
     }[]
     optOuts?: string[]
@@ -77,6 +78,7 @@ describe('applyReceiptToExpense', () => {
             quantityMilli: item.quantityMilli,
             amount: item.amount,
             isShared: item.isShared,
+            isAdjustment: item.isAdjustment ?? false,
             position,
             portions: item.portions
               ? { createMany: { data: item.portions } }
@@ -266,6 +268,120 @@ describe('applyReceiptToExpense', () => {
     expect(afterReceipt.items.map((item) => item.amount)).toEqual(
       beforeReceipt.items.map((item) => item.amount),
     )
+  })
+
+  it('rejects a negative participant total from a negative adjustment and leaves the expense unchanged', async () => {
+    // Alice's dish (10.00) minus a 15.00 whole-bill discount pushes Bob and
+    // Carol below zero; Carol opted out of the unassigned pool but shared
+    // charges still land on everyone.
+    const receiptId = await createReceipt({
+      items: [
+        {
+          name: 'Pizza',
+          quantityMilli: 1000,
+          amount: 1000,
+          isShared: false,
+          portions: [
+            {
+              target: 'PARTICIPANT',
+              participantId: participantA,
+              quantityMilli: 1000,
+            },
+          ],
+        },
+        {
+          name: 'Discount',
+          quantityMilli: 1000,
+          amount: -1500,
+          isShared: true,
+          isAdjustment: true,
+        },
+      ],
+      optOuts: [participantC],
+    })
+    const expenseId = await createExpense()
+
+    const split = await splitFor(receiptId)
+    expect(split.allOptedOut).toBe(false)
+    expect(split.itemsTotal).toBe(-500)
+    expect(
+      split.participants.some((participant) => participant.total < 0),
+    ).toBe(true)
+
+    const before = (await getExpense(groupId, expenseId))!
+    const beforeReceipt = (await getReceiptById(receiptId))!
+
+    await expect(
+      applyReceiptToExpense({ groupId, receiptId, expenseId }),
+    ).rejects.toThrow(/negative share/i)
+
+    // Neither the expense nor the receipt link changed.
+    const after = (await getExpense(groupId, expenseId))!
+    expect(after.amount).toBe(before.amount)
+    expect(after.splitMode).toBe(before.splitMode)
+    expect(after.paidFor.map((p) => [p.participantId, p.shares])).toEqual(
+      before.paidFor.map((p) => [p.participantId, p.shares]),
+    )
+
+    const afterReceipt = (await getReceiptById(receiptId))!
+    expect(afterReceipt.expenseId).toBeNull()
+    expect(afterReceipt.items.map((item) => item.amount)).toEqual(
+      beforeReceipt.items.map((item) => item.amount),
+    )
+  })
+
+  it('applies a positive adjustment together with the items', async () => {
+    const receiptId = await createReceipt({
+      items: [
+        {
+          name: 'Pizza',
+          quantityMilli: 1000,
+          amount: 1000,
+          isShared: false,
+          portions: [
+            {
+              target: 'PARTICIPANT',
+              participantId: participantA,
+              quantityMilli: 1000,
+            },
+          ],
+        },
+        {
+          name: 'Service charge',
+          quantityMilli: 1000,
+          amount: 200,
+          isShared: true,
+          isAdjustment: true,
+        },
+      ],
+      optOuts: [participantC],
+    })
+    const expenseId = await createExpense()
+
+    const result = await applyReceiptToExpense({
+      groupId,
+      receiptId,
+      expenseId,
+    })
+    expect(result).toEqual({ expenseId })
+
+    const expense = (await getExpense(groupId, expenseId))!
+    expect(expense.splitMode).toBe('BY_AMOUNT')
+    expect(expense.amount).toBe(1200)
+
+    const expected = await splitFor(receiptId)
+    const expectedShares = new Map(
+      expected.participants
+        .filter((participant) => participant.total > 0)
+        .map((participant) => [participant.participantId, participant.total]),
+    )
+    const storedShares = new Map(
+      expense.paidFor.map((paidFor) => [paidFor.participantId, paidFor.shares]),
+    )
+    expect(storedShares).toEqual(expectedShares)
+    expect(
+      [...storedShares.values()].reduce((sum, value) => sum + value, 0),
+    ).toBe(expense.amount)
   })
 
   it('does not re-apply after a later manual edit of the expense', async () => {

@@ -144,6 +144,15 @@ describe('ReceiptFooter', () => {
     ).toBeVisible()
   })
 
+  it('replaces Apply with an empty hint when the receipt has no items', () => {
+    renderFooter({ empty: true, canApply: false })
+
+    expect(screen.getByText(messages.ReceiptItems.empty)).toBeVisible()
+    expect(
+      screen.queryByRole('button', { name: 'Apply to expense' }),
+    ).not.toBeInTheDocument()
+  })
+
   it('does not show the divergence note by default', () => {
     renderFooter()
 

@@ -4,6 +4,7 @@ import {
   distributeAmount,
   getExpenseShares,
   getParticipantShare,
+  weightedApportion,
 } from './shares'
 
 const SPLIT_MODES: SplitMode[] = [
@@ -269,6 +270,30 @@ describe('getParticipantShare', () => {
 
   it('returns zero when there is no active participant', () => {
     expect(getParticipantShare(null, evenly)).toBe(0)
+  })
+})
+
+describe('weightedApportion', () => {
+  it('splits proportionally and adds up to the amount', () => {
+    expect(weightedApportion(100, [1, 3])).toEqual([25, 75])
+  })
+
+  it('does not lose a minor unit on an uneven split', () => {
+    const amounts = weightedApportion(1000, [1, 1, 1])
+
+    expect(amounts.reduce((total, amount) => total + amount, 0)).toBe(1000)
+  })
+
+  it('weights by quantity rather than participant count', () => {
+    expect(weightedApportion(3000, [2000, 1000])).toEqual([2000, 1000])
+  })
+
+  it('returns an empty array for no weights', () => {
+    expect(weightedApportion(100, [])).toEqual([])
+  })
+
+  it('gives everyone zero when the weights add up to zero', () => {
+    expect(weightedApportion(100, [0, 0])).toEqual([0, 0])
   })
 })
 

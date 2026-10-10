@@ -144,6 +144,20 @@ describe('ReceiptFooter', () => {
     ).toBeVisible()
   })
 
+  it('does not show the divergence note by default', () => {
+    renderFooter()
+
+    expect(screen.queryByTestId('divergent-note')).not.toBeInTheDocument()
+  })
+
+  it('shows the divergence note when the expense no longer matches', () => {
+    renderFooter({ divergent: true })
+
+    expect(
+      screen.getByText(messages.ReceiptItems.footer.divergent),
+    ).toBeVisible()
+  })
+
   it('enables Apply when canApply is true', () => {
     renderFooter({ canApply: true })
 

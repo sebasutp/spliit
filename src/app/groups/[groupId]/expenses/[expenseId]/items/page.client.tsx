@@ -46,6 +46,7 @@ import { trpc } from '@/trpc/client'
 import type { AppRouterOutput } from '@/trpc/routers/_app'
 import { Plus } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
+import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 const UPDATE_DEBOUNCE_MS = 500
@@ -93,6 +94,7 @@ export default function ReceiptItemsPageClient({ groupId, expenseId }: Props) {
   const locale = useLocale()
   const { toast } = useToast()
   const utils = trpc.useUtils()
+  const router = useRouter()
 
   const receiptQuery = trpc.groups.receipts.get.useQuery({ groupId, expenseId })
   const groupQuery = trpc.groups.get.useQuery({ groupId })
@@ -102,6 +104,7 @@ export default function ReceiptItemsPageClient({ groupId, expenseId }: Props) {
   const [draft, setDraft] = useState<ReceiptDraft | null>(null)
   const [assigningItem, setAssigningItem] = useState<DraftItem | null>(null)
   const [addingItem, setAddingItem] = useState(false)
+  const [confirmingApply, setConfirmingApply] = useState(false)
   const [newName, setNewName] = useState('')
   const [newQuantity, setNewQuantity] = useState('1')
   const [newAmount, setNewAmount] = useState('')
@@ -170,6 +173,27 @@ export default function ReceiptItemsPageClient({ groupId, expenseId }: Props) {
   const setOptOutMutation =
     trpc.groups.receipts.setOptOut.useMutation(mutationOptions)
 
+  const applyMutation = trpc.groups.receipts.applyToExpense.useMutation({
+    onSuccess: () => {
+      toast({
+        title: t('applySuccess.title'),
+        description: t('applySuccess.description'),
+      })
+      void utils.groups.receipts.get.invalidate()
+      void utils.groups.expenses.get.invalidate()
+      void utils.groups.expenses.list.invalidate()
+      void utils.groups.get.invalidate()
+      router.refresh()
+    },
+    onError: (error) => {
+      toast({
+        variant: 'destructive',
+        title: t('applyError.title'),
+        description: error.message,
+      })
+    },
+  })
+
   const participants = useMemo(
     () => receiptData?.participants ?? group?.participants ?? [],
     [receiptData, group],
@@ -215,10 +239,28 @@ export default function ReceiptItemsPageClient({ groupId, expenseId }: Props) {
   const receipt = receiptData.receipt
   const receiptId = receipt.id
   const currency = getCurrencyFromGroup(group)
+  const linkedExpense = receipt.expense
+  // The receipt stays usable after a later manual edit; this only flags that the
+  // expense no longer matches the items total.
+  const divergent =
+    linkedExpense !== null && linkedExpense.amount !== split.itemsTotal
   const footerParticipants = participants.map((participant) => ({
     id: participant.id,
     name: participant.name,
   }))
+
+  const applyReceipt = () => {
+    applyMutation.mutate({ groupId, receiptId, expenseId })
+  }
+
+  // Applying is never automatic: a divergent expense needs an explicit confirm.
+  const handleApply = () => {
+    if (divergent) {
+      setConfirmingApply(true)
+      return
+    }
+    applyReceipt()
+  }
 
   const summaryFor = (entries: SectionEntry[]) => {
     const totalQuantity = entries.reduce(
@@ -414,11 +456,47 @@ export default function ReceiptItemsPageClient({ groupId, expenseId }: Props) {
         currency={currency}
         reconciliation={reconciliation}
         canApply={canApply}
+        divergent={divergent}
         optedOutParticipantIds={draft.optedOutParticipantIds}
         onOptOutChange={handleToggleOptOut}
-        // Apply-to-expense lands in a later stage.
-        onApply={() => {}}
+        onApply={handleApply}
+        applying={applyMutation.isPending}
       />
+
+      {divergent && linkedExpense ? (
+        <Dialog open={confirmingApply} onOpenChange={setConfirmingApply}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{t('applyConfirm.title')}</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground">
+              {t('applyConfirm.description')}
+            </p>
+            <p className="text-base font-semibold tabular-nums">
+              {t('applyConfirm.total', {
+                current: formatCurrency(currency, linkedExpense.amount, locale),
+                new: formatCurrency(currency, split.itemsTotal, locale),
+              })}
+            </p>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setConfirmingApply(false)}
+              >
+                {t('applyConfirm.cancel')}
+              </Button>
+              <Button
+                onClick={() => {
+                  setConfirmingApply(false)
+                  applyReceipt()
+                }}
+              >
+                {t('applyConfirm.confirm')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ) : null}
 
       {assigningItem ? (
         <AssignItemDialog

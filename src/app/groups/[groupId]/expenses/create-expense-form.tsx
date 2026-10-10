@@ -1,7 +1,7 @@
 'use client'
 import { RuntimeFeatureFlags } from '@/lib/featureFlags'
 import { trpc } from '@/trpc/client'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { ExpenseForm } from './expense-form'
 
 export function CreateExpenseForm({
@@ -20,9 +20,13 @@ export function CreateExpenseForm({
 
   const { mutateAsync: createExpenseMutateAsync } =
     trpc.groups.expenses.create.useMutation()
+  const { mutateAsync: linkReceiptMutateAsync } =
+    trpc.groups.receipts.link.useMutation()
 
   const utils = trpc.useUtils()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const receiptId = searchParams.get('receiptId')
 
   if (!group || !categories) return null
 
@@ -31,12 +35,17 @@ export function CreateExpenseForm({
       group={group}
       categories={categories}
       onSubmit={async (expenseFormValues, participantId) => {
-        await createExpenseMutateAsync({
+        const { expenseId } = await createExpenseMutateAsync({
           groupId,
           expenseFormValues,
           participantId,
         })
         utils.groups.expenses.invalidate()
+        if (receiptId) {
+          await linkReceiptMutateAsync({ groupId, receiptId, expenseId })
+          router.push(`/groups/${groupId}/expenses/${expenseId}/items`)
+          return
+        }
         router.push(`/groups/${group.id}`)
       }}
       runtimeFeatureFlags={runtimeFeatureFlags}

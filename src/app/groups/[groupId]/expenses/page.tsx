@@ -15,11 +15,19 @@ export async function generateMetadata() {
 }
 
 export default async function GroupExpensesPage() {
+  // The line-items calculator builds on receipt extraction, so enabling it also
+  // enables (and must show the entry point for) the base extraction feature.
+  const enableReceiptItems =
+    env.ENABLE_RECEIPT_ITEMS || env.NEXT_PUBLIC_ENABLE_RECEIPT_ITEMS
+  const enableReceiptExtract =
+    env.ENABLE_RECEIPT_EXTRACT ||
+    env.NEXT_PUBLIC_ENABLE_RECEIPT_EXTRACT ||
+    enableReceiptItems
+
   return (
     <GroupExpensesPageClient
-      enableReceiptExtract={
-        env.ENABLE_RECEIPT_EXTRACT || env.NEXT_PUBLIC_ENABLE_RECEIPT_EXTRACT
-      }
+      enableReceiptExtract={enableReceiptExtract}
+      enableReceiptItems={enableReceiptItems}
       s3PublicUrl={env.S3_PUBLIC_URL ?? null}
     />
   )

@@ -705,3 +705,129 @@ describe('group receipts.applyToExpense mutation', () => {
     expect(storedShares).toEqual(splitShares)
   })
 })
+
+describe('group receipts.link mutation', () => {
+  const caller = groupsRouter.createCaller({ user: null })
+
+  const groupId = randomId()
+  const otherGroupId = randomId()
+  const participantId = randomId()
+  const otherParticipantId = randomId()
+
+  const receiptId = randomId()
+  const otherReceiptId = randomId()
+  const expenseId = randomId()
+  const otherExpenseId = randomId()
+
+  let categoryId: number
+
+  beforeAll(async () => {
+    const category = await prisma.category.create({
+      data: {
+        grouping: 'Receipt link tRPC tests',
+        name: `Receipt link tRPC ${randomId()}`,
+      },
+    })
+    categoryId = category.id
+
+    await prisma.group.create({
+      data: {
+        id: groupId,
+        name: 'Receipt link tRPC Group',
+        participants: {
+          create: { id: participantId, name: 'Alice' },
+        },
+      },
+    })
+
+    await prisma.group.create({
+      data: {
+        id: otherGroupId,
+        name: 'Other Receipt link tRPC Group',
+        participants: {
+          create: { id: otherParticipantId, name: 'Bob' },
+        },
+      },
+    })
+
+    await prisma.receipt.create({
+      data: {
+        id: receiptId,
+        groupId,
+        imageUrl: `https://example.com/${randomId()}.jpg`,
+        status: ReceiptStatus.EXTRACTED,
+      },
+    })
+
+    await prisma.receipt.create({
+      data: {
+        id: otherReceiptId,
+        groupId: otherGroupId,
+        imageUrl: `https://example.com/${randomId()}.jpg`,
+        status: ReceiptStatus.EXTRACTED,
+      },
+    })
+
+    await prisma.expense.create({
+      data: {
+        id: expenseId,
+        groupId,
+        title: 'Dinner',
+        amount: 1200,
+        paidById: participantId,
+        categoryId,
+      },
+    })
+
+    await prisma.expense.create({
+      data: {
+        id: otherExpenseId,
+        groupId: otherGroupId,
+        title: 'Other Dinner',
+        amount: 500,
+        paidById: otherParticipantId,
+        categoryId,
+      },
+    })
+  })
+
+  afterAll(async () => {
+    // Receipts and expenses cascade from their group.
+    await prisma.group.deleteMany({
+      where: { id: { in: [groupId, otherGroupId] } },
+    })
+    await prisma.category.delete({ where: { id: categoryId } })
+  })
+
+  it('links a receipt to an expense in the same group', async () => {
+    const result = await caller.receipts.link({
+      groupId,
+      receiptId,
+      expenseId,
+    })
+    expect(result).toEqual({ receiptId, expenseId })
+
+    const receipt = await prisma.receipt.findUnique({
+      where: { id: receiptId },
+    })
+    expect(receipt?.expenseId).toBe(expenseId)
+  })
+
+  it('rejects a receipt or expense from another group, or missing ids', async () => {
+    await expect(
+      caller.receipts.link({ groupId, receiptId: otherReceiptId, expenseId }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+
+    await expect(
+      caller.receipts.link({ groupId, receiptId, expenseId: otherExpenseId }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+
+    await expect(
+      caller.receipts.link({ groupId, receiptId: randomId(), expenseId }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+
+    await expect(
+      caller.receipts.link({ groupId, receiptId, expenseId: randomId() }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+  })
+})

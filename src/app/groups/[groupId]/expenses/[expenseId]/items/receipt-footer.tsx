@@ -24,6 +24,8 @@ type Props = {
   reconciliation: ReceiptFooterReconciliation
   /** Whether Apply is allowed; false only when everyone opted out. */
   canApply: boolean
+  /** When true, the linked expense no longer matches the items total. */
+  divergent?: boolean
   optedOutParticipantIds: string[]
   onApply: () => void
   onOptOutChange: (participantId: string, optedOut: boolean) => void
@@ -41,6 +43,7 @@ export function ReceiptFooter({
   currency,
   reconciliation,
   canApply,
+  divergent = false,
   optedOutParticipantIds,
   onApply,
   onOptOutChange,
@@ -112,23 +115,33 @@ export function ReceiptFooter({
         </ul>
 
         <div className="flex items-center justify-between gap-2">
-          <Badge
-            data-testid="reconciliation-badge"
-            variant={reconciles ? 'secondary' : 'destructive'}
-            className={!hasPrintedTotal ? 'text-muted-foreground' : undefined}
-          >
-            {!hasPrintedTotal
-              ? `${t('footer.itemsTotal')}: ${formatCurrency(
-                  currency,
-                  itemsTotal,
-                  locale,
-                )}`
-              : reconciles
-                ? t('footer.reconciles')
-                : t('footer.offBy', {
-                    amount: formatCurrency(currency, Math.abs(delta), locale),
-                  })}
-          </Badge>
+          <div className="flex flex-col items-start gap-1">
+            <Badge
+              data-testid="reconciliation-badge"
+              variant={reconciles ? 'secondary' : 'destructive'}
+              className={!hasPrintedTotal ? 'text-muted-foreground' : undefined}
+            >
+              {!hasPrintedTotal
+                ? `${t('footer.itemsTotal')}: ${formatCurrency(
+                    currency,
+                    itemsTotal,
+                    locale,
+                  )}`
+                : reconciles
+                  ? t('footer.reconciles')
+                  : t('footer.offBy', {
+                      amount: formatCurrency(currency, Math.abs(delta), locale),
+                    })}
+            </Badge>
+            {divergent ? (
+              <p
+                data-testid="divergent-note"
+                className="text-xs text-muted-foreground"
+              >
+                {t('footer.divergent')}
+              </p>
+            ) : null}
+          </div>
 
           <div className="flex flex-col items-end gap-1">
             <Button

@@ -1,11 +1,13 @@
 import { getExpense } from '@/lib/api'
 import { linkReceiptToExpense } from '@/lib/receipts'
-import { baseProcedure } from '@/trpc/init'
-import { loadReceiptForGroup } from '@/trpc/routers/groups/receipts/shared'
+import {
+  loadReceiptForGroup,
+  receiptProcedure,
+} from '@/trpc/routers/groups/receipts/shared'
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
 
-export const linkGroupReceiptToExpenseProcedure = baseProcedure
+export const linkGroupReceiptToExpenseProcedure = receiptProcedure
   .input(
     z.object({
       groupId: z.string().min(1),

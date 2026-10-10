@@ -1,7 +1,9 @@
 import { setReceiptItemPortions } from '@/lib/receipts'
-import { baseProcedure } from '@/trpc/init'
 import {
+  MAX_RECEIPT_ITEM_PORTIONS,
+  MAX_RECEIPT_ITEM_QUANTITY_MILLI,
   loadReceiptForGroup,
+  receiptProcedure,
   reloadReceiptSplit,
 } from '@/trpc/routers/groups/receipts/shared'
 import { TRPCError } from '@trpc/server'
@@ -10,16 +12,16 @@ import { z } from 'zod'
 const portionSchema = z.object({
   target: z.enum(['PARTICIPANT', 'SHARED']),
   participantId: z.string().min(1).nullable().optional(),
-  quantityMilli: z.number().int().min(0),
+  quantityMilli: z.number().int().min(0).max(MAX_RECEIPT_ITEM_QUANTITY_MILLI),
 })
 
-export const setGroupReceiptItemPortionsProcedure = baseProcedure
+export const setGroupReceiptItemPortionsProcedure = receiptProcedure
   .input(
     z.object({
       groupId: z.string().min(1),
       receiptId: z.string().min(1),
       itemId: z.string().min(1),
-      portions: z.array(portionSchema),
+      portions: z.array(portionSchema).max(MAX_RECEIPT_ITEM_PORTIONS),
     }),
   )
   .mutation(async ({ input: { groupId, receiptId, itemId, portions } }) => {

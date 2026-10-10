@@ -84,7 +84,9 @@ export async function applyReceiptToExpense(
       height: document.height,
     })),
     notes: expense.notes ?? undefined,
-    recurrenceRule: expense.recurrenceRule as RecurrenceRule,
+    // `recurrenceRule` is nullable on legacy rows; `z.enum(...).default` does
+    // not apply to an explicit `null`, so normalise it before the schema.
+    recurrenceRule: (expense.recurrenceRule ?? 'NONE') as RecurrenceRule,
     saveDefaultSplittingOptions: false,
     // The applied amount is now the receipt's items total in the group currency.
     originalAmount: undefined,

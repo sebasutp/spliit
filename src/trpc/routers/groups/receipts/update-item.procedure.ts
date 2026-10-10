@@ -1,21 +1,34 @@
 import { updateReceiptItem } from '@/lib/receipts'
-import { baseProcedure } from '@/trpc/init'
 import {
+  MAX_RECEIPT_ITEM_AMOUNT,
+  MAX_RECEIPT_ITEM_NAME_LENGTH,
+  MAX_RECEIPT_ITEM_QUANTITY_MILLI,
   loadReceiptForGroup,
+  receiptProcedure,
   reloadReceiptSplit,
 } from '@/trpc/routers/groups/receipts/shared'
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
 
-export const updateGroupReceiptItemProcedure = baseProcedure
+export const updateGroupReceiptItemProcedure = receiptProcedure
   .input(
     z.object({
       groupId: z.string().min(1),
       receiptId: z.string().min(1),
       itemId: z.string().min(1),
-      name: z.string().min(1).optional(),
-      quantityMilli: z.number().int().positive().optional(),
-      amount: z.number().int().positive().optional(),
+      name: z.string().min(1).max(MAX_RECEIPT_ITEM_NAME_LENGTH).optional(),
+      quantityMilli: z
+        .number()
+        .int()
+        .positive()
+        .max(MAX_RECEIPT_ITEM_QUANTITY_MILLI)
+        .optional(),
+      amount: z
+        .number()
+        .int()
+        .positive()
+        .max(MAX_RECEIPT_ITEM_AMOUNT)
+        .optional(),
       isShared: z.boolean().optional(),
     }),
   )

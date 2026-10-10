@@ -4,6 +4,15 @@ import { randomId } from '@/lib/random'
 import type { ReceiptSplitResult } from '@/lib/receipt-split'
 import { groupsRouter } from './routers/groups'
 
+var mockGetRuntimeFeatureFlags = jest.fn(async () => ({
+  enableReceiptItems: true,
+  enableReceiptExtract: true,
+}))
+
+jest.mock('../lib/featureFlags', () => ({
+  getRuntimeFeatureFlags: () => mockGetRuntimeFeatureFlags(),
+}))
+
 describe('group receipts.get procedure', () => {
   const caller = groupsRouter.createCaller({ user: null })
 
@@ -54,6 +63,8 @@ describe('group receipts.get procedure', () => {
         groupId,
         imageUrl: `https://example.com/${randomId()}.jpg`,
         status: ReceiptStatus.EXTRACTED,
+        // Stored model output must never reach the client through `get`.
+        rawExtraction: JSON.stringify({ providerSecret: 'do-not-ship' }),
         items: {
           create: [
             {
@@ -141,6 +152,8 @@ describe('group receipts.get procedure', () => {
     const result = await caller.receipts.get({ groupId, receiptId })
 
     expect(result.receipt.id).toBe(receiptId)
+    // The stored raw model output is stripped before the receipt is returned.
+    expect('rawExtraction' in result.receipt).toBe(false)
     expect(result.participants.map((p) => p.id).sort()).toEqual(
       [participantA, participantB, participantC].sort(),
     )
@@ -219,6 +232,17 @@ describe('group receipts.get procedure', () => {
     await expect(
       caller.receipts.get({ groupId, expenseId: randomId() }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+  })
+
+  it('refuses the router when the receipt-items flag is off', async () => {
+    mockGetRuntimeFeatureFlags.mockResolvedValueOnce({
+      enableReceiptItems: false,
+      enableReceiptExtract: true,
+    })
+
+    await expect(
+      caller.receipts.get({ groupId, receiptId }),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN' })
   })
 })
 
@@ -430,6 +454,71 @@ describe('group receipts mutations', () => {
       where: { itemId: pizzaId },
     })
     expect(portions).toHaveLength(2)
+  })
+
+  it('clearing every portion returns a shared item to the unassigned pool', async () => {
+    const { split } = await caller.receipts.setItemPortions({
+      groupId,
+      receiptId,
+      itemId: taxId,
+      portions: [],
+    })
+
+    const tax = await prisma.receiptItem.findUnique({ where: { id: taxId } })
+    expect(tax?.isShared).toBe(false)
+
+    // The 300 tax is no longer shared; it joins Carol's unassigned 300.
+    expect(split.sharedPool).toBe(0)
+    expect(split.unassignedPool).toBe(600)
+  })
+
+  it('rejects unbounded item inputs', async () => {
+    await expect(
+      caller.receipts.setItemPortions({
+        groupId,
+        receiptId,
+        itemId: pizzaId,
+        portions: Array.from({ length: 101 }, () => ({
+          target: 'SHARED' as const,
+          quantityMilli: 1,
+        })),
+      }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+
+    await expect(
+      caller.receipts.setItemPortions({
+        groupId,
+        receiptId,
+        itemId: pizzaId,
+        portions: [
+          {
+            target: 'PARTICIPANT',
+            participantId: participantA,
+            quantityMilli: 1_000_000_001,
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+
+    await expect(
+      caller.receipts.addItem({
+        groupId,
+        receiptId,
+        name: 'x'.repeat(201),
+        quantityMilli: 1000,
+        amount: 100,
+        isShared: false,
+      }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+
+    await expect(
+      caller.receipts.updateItem({
+        groupId,
+        receiptId,
+        itemId: pizzaId,
+        amount: 10_000_000_01,
+      }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
   })
 
   it('adds an item and grows the split', async () => {
@@ -703,6 +792,24 @@ describe('group receipts.applyToExpense mutation', () => {
         .map((participant) => [participant.participantId, participant.total]),
     )
     expect(storedShares).toEqual(splitShares)
+  })
+
+  it('maps a missing receipt or expense to NOT_FOUND', async () => {
+    await expect(
+      caller.receipts.applyToExpense({
+        groupId,
+        receiptId: randomId(),
+        expenseId,
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+
+    await expect(
+      caller.receipts.applyToExpense({
+        groupId,
+        receiptId,
+        expenseId: randomId(),
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
   })
 })
 

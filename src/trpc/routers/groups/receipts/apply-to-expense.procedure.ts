@@ -1,9 +1,9 @@
 import { applyReceiptToExpense } from '@/lib/receipt-apply'
-import { baseProcedure } from '@/trpc/init'
+import { receiptProcedure } from '@/trpc/routers/groups/receipts/shared'
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
 
-export const applyGroupReceiptToExpenseProcedure = baseProcedure
+export const applyGroupReceiptToExpenseProcedure = receiptProcedure
   .input(
     z.object({
       groupId: z.string().min(1),
@@ -22,12 +22,16 @@ export const applyGroupReceiptToExpenseProcedure = baseProcedure
           participantId,
         })
       } catch (error) {
+        if (error instanceof TRPCError) throw error
+        const message =
+          error instanceof Error
+            ? error.message
+            : 'Could not apply the receipt to the expense.'
+        // A missing/cross-group receipt or expense is NOT_FOUND; everything else
+        // (negative share, all opted out, invalid split) is a BAD_REQUEST.
         throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message:
-            error instanceof Error
-              ? error.message
-              : 'Could not apply the receipt to the expense.',
+          code: /not found/i.test(message) ? 'NOT_FOUND' : 'BAD_REQUEST',
+          message,
         })
       }
     },

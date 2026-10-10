@@ -1,13 +1,13 @@
 import { deleteReceiptItem } from '@/lib/receipts'
-import { baseProcedure } from '@/trpc/init'
 import {
   loadReceiptForGroup,
+  receiptProcedure,
   reloadReceiptSplit,
 } from '@/trpc/routers/groups/receipts/shared'
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
 
-export const deleteGroupReceiptItemProcedure = baseProcedure
+export const deleteGroupReceiptItemProcedure = receiptProcedure
   .input(
     z.object({
       groupId: z.string().min(1),

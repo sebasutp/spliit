@@ -1,13 +1,26 @@
-import { getReceiptForExpense } from '@/lib/receipts'
-import { baseProcedure } from '@/trpc/init'
+import { getReceiptForExpense, type ReceiptWithItems } from '@/lib/receipts'
 import {
   computeReceiptSplitFor,
   loadReceiptForGroup,
+  receiptProcedure,
 } from '@/trpc/routers/groups/receipts/shared'
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
 
-export const getGroupReceiptProcedure = baseProcedure
+/**
+ * Drops the stored raw model output before the receipt reaches the client. It
+ * can be large, it is never used by the items screen, and the stored model
+ * output should not be exposed to every client that can address the receipt.
+ */
+function toReceiptDto(
+  receipt: ReceiptWithItems,
+): Omit<ReceiptWithItems, 'rawExtraction'> {
+  const { rawExtraction, ...dto } = receipt
+  void rawExtraction
+  return dto
+}
+
+export const getGroupReceiptProcedure = receiptProcedure
   .input(
     z
       .object({
@@ -44,7 +57,7 @@ export const getGroupReceiptProcedure = baseProcedure
     const split = computeReceiptSplitFor(receipt, group)
 
     return {
-      receipt,
+      receipt: toReceiptDto(receipt),
       split,
       participants: group.participants,
       optedOutParticipantIds: receipt.optOuts.map(

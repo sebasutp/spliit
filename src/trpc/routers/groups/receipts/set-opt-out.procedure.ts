@@ -1,13 +1,13 @@
 import { setReceiptOptOut } from '@/lib/receipts'
-import { baseProcedure } from '@/trpc/init'
 import {
   loadReceiptForGroup,
+  receiptProcedure,
   reloadReceiptSplit,
 } from '@/trpc/routers/groups/receipts/shared'
 import { TRPCError } from '@trpc/server'
 import { z } from 'zod'
 
-export const setGroupReceiptOptOutProcedure = baseProcedure
+export const setGroupReceiptOptOutProcedure = receiptProcedure
   .input(
     z.object({
       groupId: z.string().min(1),

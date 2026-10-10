@@ -112,26 +112,50 @@ const envSchema = z
       interpretEnvVarAsBool,
       z.boolean().default(false),
     ),
+    // --- AI provider --------------------------------------------------------
+    // Spliit calls an OpenAI-compatible Chat Completions endpoint. The
+    // provider-neutral AI_* names are the documented way to point it at Gemini,
+    // Ollama, OpenRouter, a self-hosted server, ...; the historical OPENAI_*
+    // names stay supported and AI_* wins when both are set. See README "AI
+    // provider" and src/lib/ai/client.ts for the resolution.
+    //
     // .trim() guards against a trailing CR from a CRLF (Windows) .env file: a
     // key ending in "\r" would otherwise fail authentication with a 401.
+    AI_API_KEY: z.string().trim().optional(),
     OPENAI_API_KEY: z.string().trim().optional(),
-    // Optional OpenAI-compatible endpoint (a self-hosted or alternative
-    // provider). When unset the SDK's default — the official API — is used.
+    // Optional endpoint override. When unset the SDK's default — the official
+    // OpenAI API — is used.
+    AI_BASE_URL: z.preprocess(
+      interpretBlankEnvVarAsUndefined,
+      z.string().trim().url().optional(),
+    ),
     OPENAI_BASE_URL: z.preprocess(
       interpretBlankEnvVarAsUndefined,
       z.string().trim().url().optional(),
     ),
-    // The models each feature uses. Both default to what the code used before
-    // they were configurable; a provider set through OPENAI_BASE_URL will
-    // almost certainly need different names.
+    // The models each feature uses. Both spellings default to what the code
+    // used before they were configurable; a provider set through AI_BASE_URL /
+    // OPENAI_BASE_URL will almost certainly need different names.
+    AI_MODEL_RECEIPT_EXTRACT: z.preprocess(
+      interpretBlankEnvVarAsUndefined,
+      z.string().trim().optional(),
+    ),
     OPENAI_MODEL_RECEIPT_EXTRACT: z.preprocess(
       interpretBlankEnvVarAsUndefined,
       z.string().trim().default('gpt-5-nano'),
     ),
-    // Optional: when unset, the extraction action falls back to
-    // OPENAI_MODEL_RECEIPT_EXTRACT. Left without a default so the fallback
-    // stays in the action rather than being baked into the env snapshot.
+    // Optional: when unset, the extraction action falls back to the
+    // receipt-extract model. Left without a default so the fallback stays in
+    // the action rather than being baked into the env snapshot.
+    AI_MODEL_RECEIPT_ITEMS_EXTRACT: z.preprocess(
+      interpretBlankEnvVarAsUndefined,
+      z.string().trim().optional(),
+    ),
     OPENAI_MODEL_RECEIPT_ITEMS_EXTRACT: z.preprocess(
+      interpretBlankEnvVarAsUndefined,
+      z.string().trim().optional(),
+    ),
+    AI_MODEL_CATEGORY_EXTRACT: z.preprocess(
       interpretBlankEnvVarAsUndefined,
       z.string().trim().optional(),
     ),
@@ -176,6 +200,8 @@ const envSchema = z
       env.ENABLE_RECEIPT_ITEMS || env.NEXT_PUBLIC_ENABLE_RECEIPT_ITEMS
     const enableCategoryExtract =
       env.ENABLE_CATEGORY_EXTRACT || env.NEXT_PUBLIC_ENABLE_CATEGORY_EXTRACT
+    // Either spelling of the key satisfies the checks below.
+    const aiApiKey = env.AI_API_KEY ?? env.OPENAI_API_KEY
     if (
       enableExpenseDocuments &&
       // S3_UPLOAD_ENDPOINT is fully optional as it will only be used for providers other than AWS
@@ -190,21 +216,18 @@ const envSchema = z
           'If ENABLE_EXPENSE_DOCUMENTS is set, then S3_* must be set too',
       })
     }
-    if (
-      (enableReceiptExtract || enableCategoryExtract) &&
-      !env.OPENAI_API_KEY
-    ) {
+    if ((enableReceiptExtract || enableCategoryExtract) && !aiApiKey) {
       ctx.addIssue({
         code: ZodIssueCode.custom,
         message:
-          'If ENABLE_RECEIPT_EXTRACT or ENABLE_CATEGORY_EXTRACT is set, then OPENAI_API_KEY must be set too',
+          'If ENABLE_RECEIPT_EXTRACT or ENABLE_CATEGORY_EXTRACT is set, then AI_API_KEY (or OPENAI_API_KEY) must be set too',
       })
     }
-    if (enableReceiptItems && !env.OPENAI_API_KEY) {
+    if (enableReceiptItems && !aiApiKey) {
       ctx.addIssue({
         code: ZodIssueCode.custom,
         message:
-          'If ENABLE_RECEIPT_ITEMS is set, then OPENAI_API_KEY must be set too',
+          'If ENABLE_RECEIPT_ITEMS is set, then AI_API_KEY (or OPENAI_API_KEY) must be set too',
       })
     }
     if (env.ANALYTICS_PROVIDER === 'plausible' && !env.PLAUSIBLE_DOMAIN) {

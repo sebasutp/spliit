@@ -10,7 +10,9 @@ const RELEVANT_KEYS = [
   'NEXT_PUBLIC_ENABLE_RECEIPT_ITEMS',
   'ENABLE_CATEGORY_EXTRACT',
   'NEXT_PUBLIC_ENABLE_CATEGORY_EXTRACT',
+  'AI_API_KEY',
   'OPENAI_API_KEY',
+  'AI_MODEL_RECEIPT_ITEMS_EXTRACT',
   'OPENAI_MODEL_RECEIPT_ITEMS_EXTRACT',
 ] as const
 
@@ -61,6 +63,26 @@ describe('env receipt-items configuration', () => {
     const { env } = await importEnv()
 
     expect(env.OPENAI_MODEL_RECEIPT_ITEMS_EXTRACT).toBe('test-items-model')
+  })
+
+  it('accepts AI_API_KEY as an alternative to OPENAI_API_KEY', async () => {
+    process.env.ENABLE_RECEIPT_ITEMS = 'true'
+    process.env.AI_API_KEY = 'gemini-key'
+
+    const { env } = await importEnv()
+
+    expect(env.ENABLE_RECEIPT_ITEMS).toBe(true)
+    expect(env.AI_API_KEY).toBe('gemini-key')
+  })
+
+  it('reads the provider-neutral AI_MODEL_RECEIPT_ITEMS_EXTRACT', async () => {
+    process.env.ENABLE_RECEIPT_ITEMS = 'true'
+    process.env.AI_API_KEY = 'gemini-key'
+    process.env.AI_MODEL_RECEIPT_ITEMS_EXTRACT = 'gemini-2.5-flash'
+
+    const { env } = await importEnv()
+
+    expect(env.AI_MODEL_RECEIPT_ITEMS_EXTRACT).toBe('gemini-2.5-flash')
   })
 
   it('parses without the items flags even when OPENAI_API_KEY is unset', async () => {

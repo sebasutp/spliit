@@ -337,6 +337,26 @@ describe('extractReceiptItemsForImage', () => {
     expect(mockCompleteReceipt).not.toHaveBeenCalled()
   })
 
+  it('records a failure and returns FAILED when the model call throws', async () => {
+    mockCreate.mockRejectedValue(new Error('upstream 500'))
+
+    const result = await extractReceiptItemsForImage({
+      groupId: 'group-1',
+      imageUrl: IMAGE,
+    })
+
+    expect(result).toEqual({
+      status: 'FAILED',
+      receiptId: PENDING_RECEIPT_ID,
+    })
+    expect(mockFailReceipt).toHaveBeenCalledWith(PENDING_RECEIPT_ID, {
+      rawExtraction: null,
+      provider: 'openai',
+      model: 'test-vision-model',
+    })
+    expect(mockCompleteReceipt).not.toHaveBeenCalled()
+  })
+
   it('rejects when the items feature flag is off, before any AI call', async () => {
     mockGetRuntimeFeatureFlags.mockResolvedValue({
       enableReceiptExtract: true,

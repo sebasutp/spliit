@@ -1,7 +1,17 @@
 'use server'
+import {
+  getAiProvider,
+  getReceiptExtractModel,
+  getReceiptItemsModel,
+  openai,
+} from '@/lib/ai/client'
+import {
+  buildReceiptExtractPrompt,
+  buildReceiptItemsPrompt,
+} from '@/lib/ai/prompts'
+import { RECEIPT_EXTRACT_JSON_SCHEMA } from '@/lib/ai/schemas'
 import { getCategories, getGroup } from '@/lib/api'
 import { ReceiptStatus } from '@/lib/enums'
-import { env } from '@/lib/env'
 import { getRuntimeFeatureFlags } from '@/lib/featureFlags'
 import {
   normalizeReceipt,
@@ -18,13 +28,7 @@ import {
 } from '@/lib/receipts'
 import { isAllowedUploadUrl } from '@/lib/uploaded-image-url'
 import { formatCategoryForAIPrompt, getCurrencyFromGroup } from '@/lib/utils'
-import OpenAI from 'openai'
 import { z } from 'zod'
-
-const openai = new OpenAI({
-  apiKey: env.OPENAI_API_KEY,
-  baseURL: env.OPENAI_BASE_URL,
-})
 
 // The model is contractually bound to this shape by `strict: true` below, but
 // the response is still parsed rather than trusted: a self-hosted or older
@@ -37,8 +41,6 @@ const receiptResponseSchema = z.object({
 })
 
 export async function extractExpenseInformationFromImage(imageUrl: string) {
-  'use server'
-
   // Enforce the feature flag server-side: the UI gate only hides the button, it
   // does not prevent the action endpoint from being invoked directly.
   const { enableReceiptExtract } = await getRuntimeFeatureFlags()
@@ -54,42 +56,19 @@ export async function extractExpenseInformationFromImage(imageUrl: string) {
   }
 
   const categories = await getCategories()
+  const categoryOptions = categories.map(formatCategoryForAIPrompt)
 
   const completion = await openai.chat.completions.create({
-    model: env.OPENAI_MODEL_RECEIPT_EXTRACT,
+    model: getReceiptExtractModel(),
     response_format: {
       type: 'json_schema',
-      json_schema: {
-        name: 'receipt_response',
-        strict: true,
-        schema: {
-          type: 'object',
-          properties: {
-            amount: { type: 'number' },
-            categoryId: { type: 'string' },
-            date: { type: 'string' },
-            title: { type: 'string' },
-          },
-          required: ['amount', 'categoryId', 'date', 'title'],
-          additionalProperties: false,
-        },
-      },
+      json_schema: RECEIPT_EXTRACT_JSON_SCHEMA,
     },
     messages: [
       {
         role: 'user',
         content: [
-          {
-            type: 'text',
-            text: `
-              This image contains a receipt.
-              Read the total amount and store it as a non-formatted number without any other text or currency.
-              Then guess the category for this receipt among the following categories and store its ID: ${categories.map(
-                (category) => formatCategoryForAIPrompt(category),
-              )}.
-              Guess the expense’s date and store it as yyyy-mm-dd.
-              Guess a title for the expense.`,
-          },
+          { type: 'text', text: buildReceiptExtractPrompt(categoryOptions) },
         ],
       },
       {
@@ -139,9 +118,11 @@ export type ReceiptItemsExtractionResult =
 
 /**
  * Rebuilds the action's result from an already-persisted EXTRACTED receipt,
- * without calling the model. `itemsTotal` is recomputed from the stored line
- * amounts (falling back to the stored total when there are no lines), and the
- * category is recovered by re-parsing the raw extraction the first call stored.
+ * without calling the model. `itemsTotal` prefers the stored total — which
+ * `completeReceipt` writes as the printed total, falling back to the line sum
+ * at extraction time — and falls back to the stored line amounts if it is null.
+ * The category is recovered by re-parsing the raw extraction the first call
+ * stored.
  */
 function toExtractedResult(
   existing: ReceiptWithItems,
@@ -175,8 +156,6 @@ export async function extractReceiptItemsForImage(input: {
   imageWidth?: number | null
   imageHeight?: number | null
 }): Promise<ReceiptItemsExtractionResult> {
-  'use server'
-
   // Server-side flag enforcement: the UI gate only hides the button.
   const { enableReceiptItems } = await getRuntimeFeatureFlags()
   if (!enableReceiptItems) {
@@ -200,6 +179,7 @@ export async function extractReceiptItemsForImage(input: {
   }
 
   const categories = await getCategories()
+  const categoryOptions = categories.map(formatCategoryForAIPrompt)
 
   const receipt =
     existing ??
@@ -219,55 +199,48 @@ export async function extractReceiptItemsForImage(input: {
     throw new Error('Receipt extraction is already in progress.')
   }
 
-  const model =
-    env.OPENAI_MODEL_RECEIPT_ITEMS_EXTRACT ?? env.OPENAI_MODEL_RECEIPT_EXTRACT
+  const model = getReceiptItemsModel()
+  const provider = getAiProvider()
 
-  const completion = await openai.chat.completions.create({
-    model,
-    response_format: {
-      type: 'json_schema',
-      json_schema: {
-        name: 'receipt_items_response',
-        strict: true,
-        schema: RECEIPT_ITEMS_JSON_SCHEMA,
+  // Spend boundary: `isAllowedUploadUrl` blocks SSRF and the atomic claim
+  // guarantees one paid call per `(groupId, imageUrl)`, but there is no
+  // per-caller throttle here — a caller can still trigger one call for each
+  // distinct uploaded image. Deployments that expose uploads broadly are
+  // expected to rate-limit at the edge (reverse proxy / platform).
+  let content: string | null = null
+  try {
+    const completion = await openai.chat.completions.create({
+      model,
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          name: 'receipt_items_response',
+          strict: true,
+          schema: RECEIPT_ITEMS_JSON_SCHEMA,
+        },
       },
-    },
-    messages: [
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'text',
-            text: `
-              This image contains a receipt.
-              Read the merchant name and store it (or null if unreadable).
-              Guess the expense's date and store it as yyyy-mm-dd (or null if unreadable).
-              Read the ISO 4217 currency code (or null if unreadable).
-              Read the printed total as a plain number without currency symbols or other text (or null if unreadable).
-              Then guess the category for this receipt among the following categories and store its ID: ${categories.map(
-                (category) => formatCategoryForAIPrompt(category),
-              )}.
-              List every purchased line item under "items", each with:
-                - name: the item's name as printed
-                - quantity: the purchased quantity as a plain number (e.g. 1, 2, 0.5)
-                - unitPrice: the price of one unit as a plain number (or null if not shown)
-                - amount: the line total as a plain number
-              Separately, list whole-bill charges under "charges", each with a name and a plain-number amount.
-              Only tax, tip, service charge, cover charge and delivery are charges.
-              A normal purchased item must never be listed as a charge.`,
-          },
-        ],
-      },
-      {
-        role: 'user',
-        content: [{ type: 'image_url', image_url: { url: input.imageUrl } }],
-      },
-    ],
-  })
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: buildReceiptItemsPrompt(categoryOptions) },
+          ],
+        },
+        {
+          role: 'user',
+          content: [{ type: 'image_url', image_url: { url: input.imageUrl } }],
+        },
+      ],
+    })
+    content = completion.choices.at(0)?.message.content ?? null
+  } catch {
+    // A thrown model call must not leave the receipt stuck in EXTRACTING until
+    // the stale timeout; record the failure so a retry can reclaim it.
+    await failReceipt(receipt.id, { rawExtraction: null, provider, model })
+    return { status: 'FAILED', receiptId: receipt.id }
+  }
 
-  const content = completion.choices.at(0)?.message.content ?? null
   const parsed = parseReceiptItemsResponse(content)
-  const provider = env.OPENAI_BASE_URL ?? 'openai'
 
   if (!parsed) {
     // Malformed or schema-violating output: record the failure on the receipt

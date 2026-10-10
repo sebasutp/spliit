@@ -46,8 +46,9 @@ import {
 } from '@/lib/utils'
 import { trpc } from '@/trpc/client'
 import type { AppRouterOutput } from '@/trpc/routers/_app'
-import { Plus } from 'lucide-react'
+import { ArrowLeft, Plus } from 'lucide-react'
 import { useLocale, useTranslations } from 'next-intl'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
@@ -215,7 +216,9 @@ export default function ReceiptItemsPageClient({ groupId, expenseId }: Props) {
       void utils.groups.expenses.get.invalidate()
       void utils.groups.expenses.list.invalidate()
       void utils.groups.get.invalidate()
-      router.refresh()
+      // Return the user to the expense they were itemizing, where the applied
+      // split is now visible.
+      router.push(`/groups/${groupId}/expenses/${expenseId}/edit`)
     },
     onError: (error) => {
       toast({
@@ -462,8 +465,19 @@ export default function ReceiptItemsPageClient({ groupId, expenseId }: Props) {
   }
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-4 p-4 pb-8">
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 pb-8 sm:px-4 sm:pt-4">
       <header className="flex flex-col gap-2">
+        <Button
+          asChild
+          variant="ghost"
+          size="sm"
+          className="-ml-2 h-8 self-start text-muted-foreground"
+        >
+          <Link href={`/groups/${groupId}/expenses/${expenseId}/edit`}>
+            <ArrowLeft className="mr-1 h-4 w-4" />
+            {t('backToExpense')}
+          </Link>
+        </Button>
         <div className="flex items-center justify-between gap-2">
           <h1 className="text-lg font-semibold">{t('title')}</h1>
           <Button

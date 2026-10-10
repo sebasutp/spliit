@@ -63,7 +63,7 @@ export function ReceiptFooter({
 
   return (
     <div className="sticky bottom-0 z-10 border-t bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-      <div className="mx-auto flex max-w-3xl flex-col gap-3 p-4">
+      <div className="mx-auto flex max-w-3xl flex-col gap-3 py-4 sm:p-4">
         <ul className="flex flex-col gap-3">
           {participants.map((participant) => {
             const share = shareByParticipant.get(participant.id)
@@ -116,7 +116,7 @@ export function ReceiptFooter({
           })}
         </ul>
 
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div className="flex flex-col items-start gap-1">
             <Badge
               data-testid="reconciliation-badge"
@@ -145,7 +145,7 @@ export function ReceiptFooter({
             ) : null}
           </div>
 
-          <div className="flex flex-col items-end gap-1">
+          <div className="flex flex-col items-stretch gap-1 sm:items-end">
             {empty ? (
               <p
                 data-testid="empty-note"
@@ -159,6 +159,7 @@ export function ReceiptFooter({
                   onClick={onApply}
                   disabled={applyBlocker !== null || applying}
                   data-testid="apply-button"
+                  className="w-full sm:w-auto"
                 >
                   {t('footer.apply')}
                 </Button>

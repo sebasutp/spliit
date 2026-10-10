@@ -1,8 +1,8 @@
 import { getGroup } from '@/lib/api'
-import type { ReceiptPortionTarget } from '@/lib/enums'
-import { computeReceiptSplit, toReceiptSplitItems } from '@/lib/receipt-split'
-import { getReceiptById, type ReceiptWithItems } from '@/lib/receipts'
+import { computeReceiptSplitFor, getReceiptById } from '@/lib/receipts'
 import { TRPCError } from '@trpc/server'
+
+export { computeReceiptSplitFor }
 
 /**
  * Loads a receipt and its group, rejecting a missing receipt or a receipt that
@@ -26,37 +26,6 @@ export async function loadReceiptForGroup(groupId: string, receiptId: string) {
   }
 
   return { receipt, group }
-}
-
-/**
- * Recomputes the provisional split for a receipt from its stored items and the
- * group's participants. Client-supplied totals are never trusted.
- */
-export function computeReceiptSplitFor(
-  receipt: ReceiptWithItems,
-  group: { participants: { id: string }[] },
-) {
-  const participantIds = group.participants.map((participant) => participant.id)
-  const optedOutParticipantIds = receipt.optOuts.map(
-    (optOut) => optOut.participantId,
-  )
-
-  return computeReceiptSplit({
-    participantIds,
-    optedOutParticipantIds,
-    items: toReceiptSplitItems(
-      receipt.items.map((item) => ({
-        amount: item.amount,
-        quantityMilli: item.quantityMilli,
-        isShared: item.isShared,
-        portions: item.portions.map((portion) => ({
-          target: portion.target as ReceiptPortionTarget,
-          participantId: portion.participantId,
-          quantityMilli: portion.quantityMilli,
-        })),
-      })),
-    ),
-  })
 }
 
 /** Reloads a receipt after a mutation and recomputes its provisional split. */

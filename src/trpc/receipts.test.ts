@@ -579,3 +579,129 @@ describe('group receipts mutations', () => {
     ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
   })
 })
+
+describe('group receipts.applyToExpense mutation', () => {
+  const caller = groupsRouter.createCaller({ user: null })
+
+  const groupId = randomId()
+  const participantA = randomId()
+  const participantB = randomId()
+
+  const receiptId = randomId()
+  const expenseId = randomId()
+
+  let categoryId: number
+
+  beforeAll(async () => {
+    const category = await prisma.category.create({
+      data: {
+        grouping: 'Receipt apply tRPC tests',
+        name: `Receipt apply tRPC ${randomId()}`,
+      },
+    })
+    categoryId = category.id
+
+    await prisma.group.create({
+      data: {
+        id: groupId,
+        name: 'Receipt apply tRPC Group',
+        participants: {
+          createMany: {
+            data: [
+              { id: participantA, name: 'Alice' },
+              { id: participantB, name: 'Bob' },
+            ],
+          },
+        },
+      },
+    })
+
+    await prisma.receipt.create({
+      data: {
+        id: receiptId,
+        groupId,
+        imageUrl: `https://example.com/${randomId()}.jpg`,
+        status: ReceiptStatus.EXTRACTED,
+        items: {
+          create: {
+            id: randomId(),
+            name: 'Pizza',
+            quantityMilli: 2000,
+            amount: 1000,
+            isShared: false,
+            position: 0,
+            portions: {
+              createMany: {
+                data: [
+                  {
+                    target: 'PARTICIPANT',
+                    participantId: participantA,
+                    quantityMilli: 1000,
+                  },
+                  {
+                    target: 'PARTICIPANT',
+                    participantId: participantB,
+                    quantityMilli: 1000,
+                  },
+                ],
+              },
+            },
+          },
+        },
+      },
+    })
+
+    await prisma.expense.create({
+      data: {
+        id: expenseId,
+        groupId,
+        title: 'Dinner',
+        amount: 1,
+        paidById: participantA,
+        categoryId,
+      },
+    })
+  })
+
+  afterAll(async () => {
+    // Receipts, items, portions and the expense cascade from the group.
+    await prisma.group.deleteMany({ where: { id: groupId } })
+    await prisma.category.delete({ where: { id: categoryId } })
+  })
+
+  it('returns the applied expenseId and stores a split matching the provisional totals', async () => {
+    const result = await caller.receipts.applyToExpense({
+      groupId,
+      receiptId,
+      expenseId,
+    })
+    expect(result).toEqual({ expenseId })
+
+    const { split, receipt } = await caller.receipts.get({
+      groupId,
+      receiptId,
+    })
+    expect(receipt.expenseId).toBe(expenseId)
+
+    const expense = await prisma.expense.findUnique({
+      where: { id: expenseId },
+      include: { paidFor: true },
+    })
+    expect(expense?.splitMode).toBe('BY_AMOUNT')
+    expect(expense?.amount).toBe(split.itemsTotal)
+    expect(expense?.amount).toBe(1000)
+
+    const storedShares = new Map(
+      expense!.paidFor.map((paidFor) => [
+        paidFor.participantId,
+        paidFor.shares,
+      ]),
+    )
+    const splitShares = new Map(
+      split.participants
+        .filter((participant) => participant.total > 0)
+        .map((participant) => [participant.participantId, participant.total]),
+    )
+    expect(storedShares).toEqual(splitShares)
+  })
+})

@@ -3,10 +3,13 @@ import { ReceiptPortionTarget, ReceiptStatus } from '@/lib/enums'
 import { prisma } from '@/lib/prisma'
 import { randomId } from '@/lib/random'
 import type { NormalizedReceipt } from '@/lib/receipt-extraction'
+import { computeReceiptSplit, toReceiptSplitItems } from '@/lib/receipt-split'
 
 /**
  * Shared include for every receipt getter: items in display order with their
- * portions, plus the per-participant opt-outs.
+ * portions, plus the per-participant opt-outs and the (optional) linked expense.
+ * Carrying `expense` lets the screen detect that a previously applied expense
+ * now diverges from the recomputed split.
  */
 const receiptInclude = {
   items: {
@@ -14,6 +17,7 @@ const receiptInclude = {
     include: { portions: true },
   },
   optOuts: true,
+  expense: { select: { id: true, amount: true } },
 } satisfies Prisma.ReceiptInclude
 
 export async function getReceiptById(receiptId: string) {
@@ -26,6 +30,37 @@ export async function getReceiptById(receiptId: string) {
 export type ReceiptWithItems = NonNullable<
   Awaited<ReturnType<typeof getReceiptById>>
 >
+
+/**
+ * Recomputes the provisional split for a receipt from its stored items and the
+ * group's participants. Client-supplied totals are never trusted.
+ */
+export function computeReceiptSplitFor(
+  receipt: ReceiptWithItems,
+  group: { participants: { id: string }[] },
+) {
+  const participantIds = group.participants.map((participant) => participant.id)
+  const optedOutParticipantIds = receipt.optOuts.map(
+    (optOut) => optOut.participantId,
+  )
+
+  return computeReceiptSplit({
+    participantIds,
+    optedOutParticipantIds,
+    items: toReceiptSplitItems(
+      receipt.items.map((item) => ({
+        amount: item.amount,
+        quantityMilli: item.quantityMilli,
+        isShared: item.isShared,
+        portions: item.portions.map((portion) => ({
+          target: portion.target as ReceiptPortionTarget,
+          participantId: portion.participantId,
+          quantityMilli: portion.quantityMilli,
+        })),
+      })),
+    ),
+  })
+}
 
 export async function getReceiptByImage(groupId: string, imageUrl: string) {
   return prisma.receipt.findUnique({

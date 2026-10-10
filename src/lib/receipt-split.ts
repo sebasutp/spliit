@@ -27,6 +27,32 @@ export type ReceiptSplitInput = {
   items: ReceiptSplitItem[]
 }
 
+export type StoredReceiptItem = {
+  amount: number
+  quantityMilli: number
+  isShared: boolean
+  portions: ReceiptPortion[]
+}
+
+/** Maps stored items to split inputs; shared items are entirely SHARED. */
+export function toReceiptSplitItems(
+  items: StoredReceiptItem[],
+): ReceiptSplitItem[] {
+  return items.map((item) =>
+    item.isShared
+      ? {
+          amount: item.amount,
+          quantityMilli: item.quantityMilli,
+          portions: [{ target: 'SHARED', quantityMilli: item.quantityMilli }],
+        }
+      : {
+          amount: item.amount,
+          quantityMilli: item.quantityMilli,
+          portions: item.portions,
+        },
+  )
+}
+
 export type ParticipantReceiptShare = {
   participantId: string
   /** Amount from portions explicitly assigned to this participant. */

@@ -2,6 +2,8 @@ import {
   ReceiptPortion,
   ReceiptSplitInput,
   computeReceiptSplit,
+  toReceiptSplitItems,
+  type StoredReceiptItem,
 } from './receipt-split'
 
 /** Local helper: a PARTICIPANT portion assigned to a participant. */
@@ -446,5 +448,59 @@ describe('computeReceiptSplit', () => {
     expect(byId(result, 'p2').direct).toBe(1000)
     expect(result.unassignedPool).toBe(0)
     expect(total(result)).toBe(1000)
+  })
+})
+
+describe('toReceiptSplitItems', () => {
+  it('keeps a normal item’s stored portions', () => {
+    const stored: StoredReceiptItem[] = [
+      {
+        amount: 1000,
+        quantityMilli: 1000,
+        isShared: false,
+        portions: [forParticipant('p1', 1000)],
+      },
+    ]
+
+    expect(toReceiptSplitItems(stored)).toEqual([
+      {
+        amount: 1000,
+        quantityMilli: 1000,
+        portions: [
+          { target: 'PARTICIPANT', participantId: 'p1', quantityMilli: 1000 },
+        ],
+      },
+    ])
+  })
+
+  it('routes a shared item entirely to the shared pool, ignoring stored portions', () => {
+    const stored: StoredReceiptItem[] = [
+      {
+        amount: 500,
+        quantityMilli: 1000,
+        isShared: true,
+        // A whole-bill charge never uses stored per-participant portions.
+        portions: [forParticipant('p1', 1000)],
+      },
+    ]
+
+    expect(toReceiptSplitItems(stored)).toEqual([
+      {
+        amount: 500,
+        quantityMilli: 1000,
+        portions: [{ target: 'SHARED', quantityMilli: 1000 }],
+      },
+    ])
+
+    const result = computeReceiptSplit({
+      participantIds: ['p1', 'p2'],
+      optedOutParticipantIds: ['p1'],
+      items: toReceiptSplitItems(stored),
+    })
+
+    // Shared charges land on everyone, opt-outs included.
+    expect(byId(result, 'p1').total).toBe(250)
+    expect(byId(result, 'p2').total).toBe(250)
+    expect(result.sharedPool).toBe(500)
   })
 })

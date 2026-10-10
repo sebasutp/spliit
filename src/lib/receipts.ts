@@ -1,5 +1,5 @@
 import { Prisma } from '@/generated/prisma/client'
-import { ReceiptStatus } from '@/lib/enums'
+import { ReceiptPortionTarget, ReceiptStatus } from '@/lib/enums'
 import { prisma } from '@/lib/prisma'
 import { randomId } from '@/lib/random'
 import type { NormalizedReceipt } from '@/lib/receipt-extraction'
@@ -171,4 +171,127 @@ export async function linkReceiptToExpense(
     where: { id: receiptId },
     data: { expenseId },
   })
+}
+
+/**
+ * Replaces an item's portions. `isShared` is derived when portions are present
+ * (a shared item is one whose portions are all SHARED) and left untouched when
+ * the list is empty.
+ */
+export async function setReceiptItemPortions(
+  receiptId: string,
+  itemId: string,
+  portions: {
+    target: ReceiptPortionTarget
+    participantId: string | null
+    quantityMilli: number
+  }[],
+): Promise<void> {
+  await prisma.$transaction(async (transaction) => {
+    await transaction.receiptItemPortion.deleteMany({ where: { itemId } })
+
+    if (portions.length === 0) return
+
+    await transaction.receiptItemPortion.createMany({
+      data: portions.map((portion) => ({
+        itemId,
+        target: portion.target,
+        participantId:
+          portion.target === ReceiptPortionTarget.SHARED
+            ? null
+            : portion.participantId,
+        quantityMilli: portion.quantityMilli,
+      })),
+    })
+
+    await transaction.receiptItem.updateMany({
+      where: { id: itemId, receiptId },
+      data: {
+        isShared: portions.every(
+          (portion) => portion.target === ReceiptPortionTarget.SHARED,
+        ),
+      },
+    })
+  })
+}
+
+/** Updates only the provided fields of an item. */
+export async function updateReceiptItem(
+  receiptId: string,
+  itemId: string,
+  data: {
+    name?: string
+    quantityMilli?: number
+    amount?: number
+    isShared?: boolean
+  },
+): Promise<void> {
+  await prisma.receiptItem.updateMany({
+    where: { id: itemId, receiptId },
+    data,
+  })
+}
+
+/**
+ * Creates a new item. When `position` is omitted it is appended after the
+ * receipt's current last item.
+ */
+export async function addReceiptItem(
+  receiptId: string,
+  data: {
+    name: string
+    quantityMilli: number
+    amount: number
+    isShared: boolean
+    isAdjustment?: boolean
+    position?: number
+  },
+): Promise<void> {
+  let position = data.position
+  if (position === undefined) {
+    const aggregate = await prisma.receiptItem.aggregate({
+      where: { receiptId },
+      _max: { position: true },
+    })
+    position = (aggregate._max.position ?? -1) + 1
+  }
+
+  await prisma.receiptItem.create({
+    data: {
+      id: randomId(),
+      receiptId,
+      name: data.name,
+      quantityMilli: data.quantityMilli,
+      amount: data.amount,
+      isShared: data.isShared,
+      isAdjustment: data.isAdjustment ?? false,
+      position,
+    },
+  })
+}
+
+export async function deleteReceiptItem(
+  receiptId: string,
+  itemId: string,
+): Promise<void> {
+  await prisma.receiptItem.deleteMany({ where: { id: itemId, receiptId } })
+}
+
+/** Opts a participant in or out of the receipt's unassigned pool. */
+export async function setReceiptOptOut(
+  receiptId: string,
+  participantId: string,
+  optedOut: boolean,
+): Promise<void> {
+  if (optedOut) {
+    await prisma.receiptOptOut.upsert({
+      where: { receiptId_participantId: { receiptId, participantId } },
+      create: { receiptId, participantId },
+      update: {},
+    })
+  } else {
+    await prisma.receiptOptOut.deleteMany({
+      where: { receiptId, participantId },
+    })
+  }
 }

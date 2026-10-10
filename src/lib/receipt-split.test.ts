@@ -473,14 +473,33 @@ describe('toReceiptSplitItems', () => {
     ])
   })
 
-  it('routes a shared item entirely to the shared pool, ignoring stored portions', () => {
+  it('lets stored portions win over the isShared fallback', () => {
     const stored: StoredReceiptItem[] = [
       {
         amount: 500,
         quantityMilli: 1000,
         isShared: true,
-        // A whole-bill charge never uses stored per-participant portions.
-        portions: [forParticipant('p1', 1000)],
+        // Once a shared item has its own portions, they take precedence.
+        portions: [shared(1000)],
+      },
+    ]
+
+    expect(toReceiptSplitItems(stored)).toEqual([
+      {
+        amount: 500,
+        quantityMilli: 1000,
+        portions: [{ target: 'SHARED', quantityMilli: 1000 }],
+      },
+    ])
+  })
+
+  it('routes a shared item with no portions entirely to the shared pool', () => {
+    const stored: StoredReceiptItem[] = [
+      {
+        amount: 500,
+        quantityMilli: 1000,
+        isShared: true,
+        portions: [],
       },
     ]
 
@@ -502,5 +521,38 @@ describe('toReceiptSplitItems', () => {
     expect(byId(result, 'p1').total).toBe(250)
     expect(byId(result, 'p2').total).toBe(250)
     expect(result.sharedPool).toBe(500)
+  })
+
+  it('honours participant portions stored on an isShared item', () => {
+    const stored: StoredReceiptItem[] = [
+      {
+        amount: 1000,
+        quantityMilli: 1000,
+        isShared: true,
+        // An isShared item can still be explicitly split among participants.
+        portions: [forParticipant('p1', 1000)],
+      },
+    ]
+
+    expect(toReceiptSplitItems(stored)).toEqual([
+      {
+        amount: 1000,
+        quantityMilli: 1000,
+        portions: [
+          { target: 'PARTICIPANT', participantId: 'p1', quantityMilli: 1000 },
+        ],
+      },
+    ])
+
+    const result = computeReceiptSplit({
+      participantIds: ['p1', 'p2'],
+      optedOutParticipantIds: [],
+      items: toReceiptSplitItems(stored),
+    })
+
+    // The stored portion wins, so this is not spread over the shared pool.
+    expect(byId(result, 'p1').direct).toBe(1000)
+    expect(byId(result, 'p2').direct).toBe(0)
+    expect(result.sharedPool).toBe(0)
   })
 })

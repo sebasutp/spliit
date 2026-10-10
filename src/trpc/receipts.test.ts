@@ -1,6 +1,7 @@
 import { ReceiptStatus } from '@/lib/enums'
 import { prisma } from '@/lib/prisma'
 import { randomId } from '@/lib/random'
+import type { ReceiptSplitResult } from '@/lib/receipt-split'
 import { groupsRouter } from './routers/groups'
 
 describe('group receipts.get procedure', () => {
@@ -218,5 +219,363 @@ describe('group receipts.get procedure', () => {
     await expect(
       caller.receipts.get({ groupId, expenseId: randomId() }),
     ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+  })
+})
+
+describe('group receipts mutations', () => {
+  const caller = groupsRouter.createCaller({ user: null })
+
+  const groupId = randomId()
+  const participantA = randomId()
+  const participantB = randomId()
+  const participantC = randomId()
+
+  const receiptId = randomId()
+  const foreignReceiptId = randomId()
+
+  const pizzaId = randomId()
+  const taxId = randomId()
+  const foreignItemId = randomId()
+
+  beforeAll(async () => {
+    await prisma.group.create({
+      data: {
+        id: groupId,
+        name: 'Receipt mutations Group',
+        participants: {
+          createMany: {
+            data: [
+              { id: participantA, name: 'Alice' },
+              { id: participantB, name: 'Bob' },
+              { id: participantC, name: 'Carol' },
+            ],
+          },
+        },
+      },
+    })
+
+    await prisma.receipt.create({
+      data: {
+        id: receiptId,
+        groupId,
+        imageUrl: `https://example.com/${randomId()}.jpg`,
+        status: ReceiptStatus.EXTRACTED,
+      },
+    })
+
+    // A separate receipt in the same group, used to prove item ownership.
+    await prisma.receipt.create({
+      data: {
+        id: foreignReceiptId,
+        groupId,
+        imageUrl: `https://example.com/${randomId()}.jpg`,
+        status: ReceiptStatus.EXTRACTED,
+        items: {
+          create: {
+            id: foreignItemId,
+            name: 'Foreign',
+            quantityMilli: 1000,
+            amount: 100,
+            isShared: false,
+            position: 0,
+          },
+        },
+      },
+    })
+  })
+
+  beforeEach(async () => {
+    // Reset the receipt under test to a known state.
+    await prisma.receiptItem.deleteMany({ where: { receiptId } })
+    await prisma.receiptOptOut.deleteMany({ where: { receiptId } })
+
+    await prisma.receiptItem.createMany({
+      data: [
+        {
+          id: pizzaId,
+          receiptId,
+          name: 'Pizza',
+          quantityMilli: 3000,
+          amount: 900,
+          isShared: false,
+          position: 0,
+        },
+        {
+          id: taxId,
+          receiptId,
+          name: 'Tax',
+          quantityMilli: 1000,
+          amount: 300,
+          isShared: true,
+          position: 1,
+        },
+      ],
+    })
+
+    // Two of three pizza units assigned; Carol's unit stays unassigned.
+    await prisma.receiptItemPortion.createMany({
+      data: [
+        {
+          itemId: pizzaId,
+          target: 'PARTICIPANT',
+          participantId: participantA,
+          quantityMilli: 1000,
+        },
+        {
+          itemId: pizzaId,
+          target: 'PARTICIPANT',
+          participantId: participantB,
+          quantityMilli: 1000,
+        },
+      ],
+    })
+  })
+
+  afterAll(async () => {
+    await prisma.group.delete({ where: { id: groupId } })
+  })
+
+  function shareFor(split: ReceiptSplitResult, participantId: string) {
+    return split.participants.find(
+      (share) => share.participantId === participantId,
+    )!
+  }
+
+  it('replaces an item’s portions and returns a split reflecting them', async () => {
+    const { split } = await caller.receipts.setItemPortions({
+      groupId,
+      receiptId,
+      itemId: pizzaId,
+      portions: [
+        {
+          target: 'PARTICIPANT',
+          participantId: participantA,
+          quantityMilli: 3000,
+        },
+      ],
+    })
+
+    const portions = await prisma.receiptItemPortion.findMany({
+      where: { itemId: pizzaId },
+    })
+    expect(portions).toHaveLength(1)
+    expect(portions[0]).toMatchObject({
+      target: 'PARTICIPANT',
+      participantId: participantA,
+      quantityMilli: 3000,
+    })
+
+    expect(split.itemsTotal).toBe(1200)
+    expect(split.sharedPool).toBe(300)
+    expect(split.unassignedPool).toBe(0)
+    expect(shareFor(split, participantA).direct).toBe(900)
+    expect(shareFor(split, participantB).direct).toBe(0)
+    expect(shareFor(split, participantC).direct).toBe(0)
+  })
+
+  it('flips a shared item out of the shared pool when assigned to participants', async () => {
+    const { split } = await caller.receipts.setItemPortions({
+      groupId,
+      receiptId,
+      itemId: taxId,
+      portions: [
+        {
+          target: 'PARTICIPANT',
+          participantId: participantA,
+          quantityMilli: 1000,
+        },
+      ],
+    })
+
+    const tax = await prisma.receiptItem.findUnique({ where: { id: taxId } })
+    expect(tax?.isShared).toBe(false)
+
+    expect(split.sharedPool).toBe(0)
+    expect(shareFor(split, participantA).direct).toBe(600)
+    expect(shareFor(split, participantB).direct).toBe(300)
+    expect(shareFor(split, participantA).shared).toBe(0)
+    expect(shareFor(split, participantA).total).toBe(700)
+  })
+
+  it('keeps isShared true when every portion is SHARED', async () => {
+    await caller.receipts.setItemPortions({
+      groupId,
+      receiptId,
+      itemId: taxId,
+      portions: [{ target: 'SHARED', quantityMilli: 1000 }],
+    })
+
+    const tax = await prisma.receiptItem.findUnique({ where: { id: taxId } })
+    expect(tax?.isShared).toBe(true)
+  })
+
+  it('rejects portions that exceed the item quantity', async () => {
+    await expect(
+      caller.receipts.setItemPortions({
+        groupId,
+        receiptId,
+        itemId: pizzaId,
+        portions: [
+          {
+            target: 'PARTICIPANT',
+            participantId: participantA,
+            quantityMilli: 4001,
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+
+    // The stored portions are untouched by the rejected call.
+    const portions = await prisma.receiptItemPortion.findMany({
+      where: { itemId: pizzaId },
+    })
+    expect(portions).toHaveLength(2)
+  })
+
+  it('adds an item and grows the split', async () => {
+    const { split } = await caller.receipts.addItem({
+      groupId,
+      receiptId,
+      name: 'Salad',
+      quantityMilli: 1000,
+      amount: 1000,
+      isShared: false,
+    })
+
+    expect(split.itemsTotal).toBe(2200)
+
+    const stored = await prisma.receiptItem.findFirst({
+      where: { receiptId, name: 'Salad' },
+    })
+    expect(stored).not.toBeNull()
+    expect(stored?.position).toBe(2)
+    expect(stored?.isShared).toBe(false)
+    expect(stored?.amount).toBe(1000)
+  })
+
+  it('updates only the provided item fields and reflects them in the split', async () => {
+    const { split } = await caller.receipts.updateItem({
+      groupId,
+      receiptId,
+      itemId: pizzaId,
+      amount: 1200,
+    })
+
+    expect(split.itemsTotal).toBe(1500)
+
+    const pizza = await prisma.receiptItem.findUnique({
+      where: { id: pizzaId },
+    })
+    expect(pizza?.amount).toBe(1200)
+    // Untouched fields keep their values.
+    expect(pizza?.name).toBe('Pizza')
+    expect(pizza?.quantityMilli).toBe(3000)
+    expect(pizza?.isShared).toBe(false)
+  })
+
+  it('deletes an item and shrinks the split', async () => {
+    const { split } = await caller.receipts.deleteItem({
+      groupId,
+      receiptId,
+      itemId: taxId,
+    })
+
+    expect(split.itemsTotal).toBe(900)
+    expect(split.sharedPool).toBe(0)
+    expect(
+      await prisma.receiptItem.findUnique({ where: { id: taxId } }),
+    ).toBeNull()
+  })
+
+  it('excludes an opted-out participant from the unassigned pool but not the shared pool, and restores them', async () => {
+    const optedOut = await caller.receipts.setOptOut({
+      groupId,
+      receiptId,
+      participantId: participantC,
+      optedOut: true,
+    })
+
+    const carolOut = shareFor(optedOut.split, participantC)
+    expect(carolOut.unassigned).toBe(0)
+    // SHARED charges still apply to opted-out participants.
+    expect(carolOut.shared).toBe(100)
+    expect(shareFor(optedOut.split, participantA).unassigned).toBe(150)
+    expect(shareFor(optedOut.split, participantB).unassigned).toBe(150)
+
+    expect(
+      await prisma.receiptOptOut.count({
+        where: { receiptId, participantId: participantC },
+      }),
+    ).toBe(1)
+
+    const restored = await caller.receipts.setOptOut({
+      groupId,
+      receiptId,
+      participantId: participantC,
+      optedOut: false,
+    })
+
+    expect(shareFor(restored.split, participantC).unassigned).toBe(100)
+    expect(
+      await prisma.receiptOptOut.count({
+        where: { receiptId, participantId: participantC },
+      }),
+    ).toBe(0)
+  })
+
+  it('rejects an itemId that belongs to another receipt', async () => {
+    await expect(
+      caller.receipts.deleteItem({
+        groupId,
+        receiptId,
+        itemId: foreignItemId,
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+
+    await expect(
+      caller.receipts.updateItem({
+        groupId,
+        receiptId,
+        itemId: foreignItemId,
+        amount: 5,
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+
+    await expect(
+      caller.receipts.setItemPortions({
+        groupId,
+        receiptId,
+        itemId: foreignItemId,
+        portions: [],
+      }),
+    ).rejects.toMatchObject({ code: 'NOT_FOUND' })
+  })
+
+  it('rejects a participant that is not in the group', async () => {
+    const outsider = randomId()
+
+    await expect(
+      caller.receipts.setOptOut({
+        groupId,
+        receiptId,
+        participantId: outsider,
+        optedOut: true,
+      }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+
+    await expect(
+      caller.receipts.setItemPortions({
+        groupId,
+        receiptId,
+        itemId: pizzaId,
+        portions: [
+          {
+            target: 'PARTICIPANT',
+            participantId: outsider,
+            quantityMilli: 100,
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
   })
 })
